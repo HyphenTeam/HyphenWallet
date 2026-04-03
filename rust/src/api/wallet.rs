@@ -502,6 +502,7 @@ pub struct TransactionSendResult {
     pub accepted: bool,
     pub error_message: String,
     pub spent_indices_csv: String,
+    pub vre_used_adaptive: bool,
 }
 
 /// Query the chain status from a node.
@@ -569,5 +570,6 @@ pub fn send_transaction(
         accepted: result.accepted,
         error_message: result.error_message,
         spent_indices_csv: result.spent_indices_csv,
+        vre_used_adaptive: result.vre_used_adaptive,
     })
 }

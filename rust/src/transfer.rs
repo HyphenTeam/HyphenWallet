@@ -40,6 +40,7 @@ pub struct SendResult {
     pub accepted: bool,
     pub error_message: String,
     pub spent_indices_csv: String,
+    pub vre_used_adaptive: bool,
 }
 
 /// Summary returned after a wallet scan.
@@ -303,8 +304,8 @@ pub fn build_and_send_transaction(
     let mut epoch_seed = [0u8; 32];
     epoch_seed.copy_from_slice(&chain_info.epoch_seed);
 
-    // Determine VRE parameters from network name
-    let vre = vre_params_for_network(&chain_info.network);
+    // Determine VRE parameters from network name, adapted to current height
+    let vre = vre_params_for_network(&chain_info.network, chain_info.height, total_outputs);
 
     // Pre-flight: ensure chain is mature enough for transactions
     if chain_info.height < vre.min_chain_height {
@@ -432,6 +433,7 @@ pub fn build_and_send_transaction(
         } else {
             String::new()
         },
+        vre_used_adaptive: vre.used_adaptive,
     })
 }
 
@@ -490,12 +492,13 @@ fn fetch_decoys(
     use rand::seq::SliceRandom;
     use std::collections::{HashMap, HashSet};
 
-    let max_retries = 8u32;
+    // More retries + larger batches for early/sparse chains
+    let max_retries = 16u32;
 
     for attempt in 0..max_retries {
-        // For early-chain with few outputs, request up to the full output set
-        let base = (count as u32 + 4) * (2 + attempt);
-        let fetch_count = base.min(128).max(total_outputs.min(128) as u32);
+        // Scale fetch aggressively — for early chains request up to all outputs
+        let base = (count as u32 + 4) * (3 + attempt);
+        let fetch_count = base.min(256).max(total_outputs.min(256) as u32);
         let resp = client.get_random_outputs(fetch_count, total_outputs)?;
 
         // Parse all valid candidates with their heights
@@ -615,6 +618,10 @@ fn fetch_decoys(
             total_outputs,
             params,
         ) {
+            // Audit decoy distribution for malicious-node detection
+            let decoy_idxs: Vec<u64> = selected.iter().map(|s| s.2).collect();
+            audit_decoy_distribution(&decoy_idxs, total_outputs)?;
+
             return Ok(selected
                 .into_iter()
                 .map(|(pk, cm, idx, _)| (pk, cm, idx))
@@ -623,41 +630,73 @@ fn fetch_decoys(
     }
 
     Err(format!(
-        "failed to select decoys satisfying ring entropy requirements after {max_retries} attempts \
+        "failed to select decoys satisfying VRE after {max_retries} attempts \
          (chain height may be insufficient or output diversity too low)"
     ))
 }
 
 /// VRE consensus parameters for decoy selection.
+///
+/// Values mirror the paper specification with adaptive scaling so that
+/// the wallet-side constraints match what the consensus layer will
+/// actually enforce at the current chain height.
 struct VreParams {
     min_ring_span: u64,
     vre_min_age_bands: usize,
     vre_age_band_width: u64,
     vre_min_index_span_bps: u64,
     min_chain_height: u64,
+    used_adaptive: bool,
 }
 
-fn vre_params_for_network(network: &str) -> VreParams {
-    if network.contains("mainnet") {
-        VreParams {
-            min_ring_span: 50,
-            vre_min_age_bands: 3,
-            vre_age_band_width: 32,
-            vre_min_index_span_bps: 300,
-            min_chain_height: 128,
-        }
+fn vre_params_for_network(network: &str, chain_height: u64, total_outputs: u64) -> VreParams {
+    let (target_span, target_bands, target_bw, target_bps, activation, ring_size) =
+        if network.contains("mainnet") {
+            (100u64, 3usize, 2048u64, 500u64, 128u64, 16u64)
+        } else {
+            (20u64, 2usize, 128u64, 300u64, 32u64, 4u64)
+        };
+
+    // Adaptive age-band width: shrink so that `target_bands` distinct bands
+    // fit within the available height range.
+    let eff_bw = if chain_height > 0 && target_bands > 0 {
+        let max_feasible = chain_height / (target_bands as u64);
+        target_bw.min(max_feasible.max(1))
     } else {
-        VreParams {
-            min_ring_span: 10,
-            vre_min_age_bands: 2,
-            vre_age_band_width: 16,
-            vre_min_index_span_bps: 200,
-            min_chain_height: 32,
-        }
+        target_bw
+    };
+
+    // Adaptive min ring span: cap at what the chain can actually provide.
+    let eff_span = target_span.min(chain_height.saturating_sub(1));
+
+    // Progressive logistic index span: target_bps × n²/(n²+k²) where k = ring_size×64
+    let eff_bps = if total_outputs > 1 {
+        let max_bps = (total_outputs - 1).saturating_mul(10_000) / total_outputs;
+        let k = (ring_size as u128).saturating_mul(64);
+        let n = total_outputs as u128;
+        let n2 = n.saturating_mul(n);
+        let k2 = k.saturating_mul(k);
+        let denom = n2.saturating_add(k2).max(1);
+        let progressive = ((target_bps as u128).saturating_mul(n2) / denom) as u64;
+        progressive.min(max_bps)
+    } else {
+        0
+    };
+
+    let used_adaptive = eff_bw != target_bw || eff_span != target_span || eff_bps != target_bps;
+
+    VreParams {
+        min_ring_span: eff_span,
+        vre_min_age_bands: target_bands,
+        vre_age_band_width: eff_bw,
+        vre_min_index_span_bps: eff_bps,
+        min_chain_height: activation,
+        used_adaptive,
     }
 }
 
-/// Pre-validate that the ring (real output + decoys) satisfies all VRE rules.
+/// Pre-validate that the ring (real output + decoys) satisfies all VRE rules
+/// using the same adaptive parameters the consensus layer will apply.
 fn check_ring_vre(
     real_height: u64,
     real_index: u64,
@@ -690,7 +729,7 @@ fn check_ring_vre(
     let mut unique_h = heights.clone();
     unique_h.sort_unstable();
     unique_h.dedup();
-    let min_distinct = (ring_size * 3 + 3) / 4; // div_ceil(ring_size * 3, 4)
+    let min_distinct = (ring_size * 3 + 3) / 4;
     if unique_h.len() < min_distinct {
         return false;
     }
@@ -717,4 +756,43 @@ fn check_ring_vre(
     }
 
     true
+}
+
+/// Verify that node-returned decoy outputs are not suspiciously clustered.
+///
+/// A malicious node may return outputs concentrated in a narrow index band
+/// to reduce the effective anonymity set. This audit divides the output
+/// space into 10 equal bands and rejects if more than half the decoys
+/// fall in the same band — a distribution incompatible with honest
+/// random sampling.
+fn audit_decoy_distribution(
+    decoy_indices: &[u64],
+    total_outputs: u64,
+) -> Result<(), String> {
+    if decoy_indices.len() < 3 || total_outputs < 10 {
+        return Ok(());
+    }
+
+    let band_size = total_outputs / 10;
+    if band_size == 0 {
+        return Ok(());
+    }
+
+    let mut band_counts = std::collections::HashMap::<u64, u32>::new();
+    for &idx in decoy_indices {
+        *band_counts.entry(idx / band_size).or_insert(0) += 1;
+    }
+
+    let max_in_band = *band_counts.values().max().unwrap_or(&0);
+    let threshold = ((decoy_indices.len() as u32) + 1) / 2;
+    if max_in_band > threshold {
+        return Err(format!(
+            "suspicious decoy clustering: {} of {} decoys in same index band — \
+             the connected node may be attempting output tracing",
+            max_in_band,
+            decoy_indices.len()
+        ));
+    }
+
+    Ok(())
 }

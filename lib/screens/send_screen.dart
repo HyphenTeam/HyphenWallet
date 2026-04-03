@@ -290,6 +290,31 @@ class _SendScreenState extends State<SendScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Your transaction has been submitted.'),
+                if (result.vreUsedAdaptive) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.orange, size: 18),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Adaptive VRE parameters were used because the '
+                            'chain is still young. Ring entropy will increase '
+                            'automatically as the network grows.',
+                            style: TextStyle(fontSize: 12, color: Colors.orange),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 SelectableText(
                   'TX: ${result.txHashHex}',
