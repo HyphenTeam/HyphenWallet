@@ -1145,13 +1145,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionSendResult dco_decode_transaction_send_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return TransactionSendResult(
       txHashHex: dco_decode_String(arr[0]),
       accepted: dco_decode_bool(arr[1]),
       errorMessage: dco_decode_String(arr[2]),
       spentIndicesCsv: dco_decode_String(arr[3]),
+      vreUsedAdaptive: dco_decode_bool(arr[4]),
     );
   }
 
@@ -1300,11 +1301,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_accepted = sse_decode_bool(deserializer);
     var var_errorMessage = sse_decode_String(deserializer);
     var var_spentIndicesCsv = sse_decode_String(deserializer);
+    var var_vreUsedAdaptive = sse_decode_bool(deserializer);
     return TransactionSendResult(
       txHashHex: var_txHashHex,
       accepted: var_accepted,
       errorMessage: var_errorMessage,
       spentIndicesCsv: var_spentIndicesCsv,
+      vreUsedAdaptive: var_vreUsedAdaptive,
     );
   }
 
@@ -1454,6 +1457,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.accepted, serializer);
     sse_encode_String(self.errorMessage, serializer);
     sse_encode_String(self.spentIndicesCsv, serializer);
+    sse_encode_bool(self.vreUsedAdaptive, serializer);
   }
 
   @protected

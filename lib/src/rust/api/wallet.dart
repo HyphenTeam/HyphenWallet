@@ -376,17 +376,23 @@ class TransactionSendResult {
   final bool accepted;
   final String errorMessage;
   final String spentIndicesCsv;
+  final bool vreUsedAdaptive;
 
   const TransactionSendResult({
     required this.txHashHex,
     required this.accepted,
     required this.errorMessage,
     required this.spentIndicesCsv,
+    required this.vreUsedAdaptive,
   });
 
   @override
   int get hashCode =>
-      txHashHex.hashCode ^ accepted.hashCode ^ errorMessage.hashCode ^ spentIndicesCsv.hashCode;
+      txHashHex.hashCode ^
+      accepted.hashCode ^
+      errorMessage.hashCode ^
+      spentIndicesCsv.hashCode ^
+      vreUsedAdaptive.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -396,7 +402,8 @@ class TransactionSendResult {
           txHashHex == other.txHashHex &&
           accepted == other.accepted &&
           errorMessage == other.errorMessage &&
-          spentIndicesCsv == other.spentIndicesCsv;
+          spentIndicesCsv == other.spentIndicesCsv &&
+          vreUsedAdaptive == other.vreUsedAdaptive;
 }
 
 /// Complete wallet creation result.

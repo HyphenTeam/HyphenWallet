@@ -1013,11 +1013,13 @@ impl SseDecode for crate::api::wallet::TransactionSendResult {
         let mut var_accepted = <bool>::sse_decode(deserializer);
         let mut var_errorMessage = <String>::sse_decode(deserializer);
         let mut var_spentIndicesCsv = <String>::sse_decode(deserializer);
+        let mut var_vreUsedAdaptive = <bool>::sse_decode(deserializer);
         return crate::api::wallet::TransactionSendResult {
             tx_hash_hex: var_txHashHex,
             accepted: var_accepted,
             error_message: var_errorMessage,
             spent_indices_csv: var_spentIndicesCsv,
+            vre_used_adaptive: var_vreUsedAdaptive,
         };
     }
 }
@@ -1246,6 +1248,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::TransactionSendResult
             self.accepted.into_into_dart().into_dart(),
             self.error_message.into_into_dart().into_dart(),
             self.spent_indices_csv.into_into_dart().into_dart(),
+            self.vre_used_adaptive.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1372,6 +1375,7 @@ impl SseEncode for crate::api::wallet::TransactionSendResult {
         <bool>::sse_encode(self.accepted, serializer);
         <String>::sse_encode(self.error_message, serializer);
         <String>::sse_encode(self.spent_indices_csv, serializer);
+        <bool>::sse_encode(self.vre_used_adaptive, serializer);
     }
 }
 
