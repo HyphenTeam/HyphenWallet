@@ -68,24 +68,34 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
   void _goToPassword() {
     final l10n = AppLocalizations.of(context)!;
     for (final idx in _verifyIndices) {
-      if (_verifyAnswers[idx]?.trim().toLowerCase() != _words[idx].toLowerCase()) {
+      if (_verifyAnswers[idx]?.trim().toLowerCase() !=
+          _words[idx].toLowerCase()) {
         setState(() => _error = l10n.wordIncorrect(idx + 1));
         return;
       }
     }
-    setState(() { _error = null; _step = 2; });
+    setState(() {
+      _error = null;
+      _step = 2;
+    });
   }
 
   Future<void> _finishCreation() async {
     if (!_passwordFormKey.currentState!.validate()) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final wallet = context.read<WalletService>();
       await wallet.restoreWallet(_mnemonic!, _passwordController.text);
       if (!mounted) return;
       Navigator.of(context).pushNamedAndRemoveUntil('/home', (_) => false);
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -102,7 +112,12 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
     return PopScope(
       canPop: _step == 0,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _step > 0) setState(() { _step--; _error = null; });
+        if (!didPop && _step > 0) {
+          setState(() {
+            _step--;
+            _error = null;
+          });
+        }
       },
       child: Scaffold(
         appBar: AppBar(
@@ -110,7 +125,14 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_rounded),
             onPressed: () {
-              if (_step > 0) { setState(() { _step--; _error = null; }); } else { Navigator.pop(context); }
+              if (_step > 0) {
+                setState(() {
+                  _step--;
+                  _error = null;
+                });
+              } else {
+                Navigator.pop(context);
+              }
             },
           ),
         ),
@@ -123,7 +145,10 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
               return FadeTransition(
                 opacity: animation,
                 child: SlideTransition(
-                  position: Tween<Offset>(begin: const Offset(0.05, 0), end: Offset.zero).animate(animation),
+                  position: Tween<Offset>(
+                    begin: const Offset(0.05, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
                   child: child,
                 ),
               );
@@ -150,7 +175,10 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
         children: [
           const CircularProgressIndicator(color: HyphenColors.primary),
           const SizedBox(height: 16),
-          Text(l10n.generatingSecureWallet, style: const TextStyle(color: HyphenColors.textSecondary)),
+          Text(
+            l10n.generatingSecureWallet,
+            style: const TextStyle(color: HyphenColors.textSecondary),
+          ),
         ],
       ),
     );
@@ -165,9 +193,23 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
         children: [
           _stepIndicator(0),
           const SizedBox(height: 24),
-          Text(l10n.recoveryPhrase, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: HyphenColors.textPrimary)),
+          Text(
+            l10n.recoveryPhrase,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: HyphenColors.textPrimary,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text(l10n.writeDownWords, style: const TextStyle(fontSize: 14, color: HyphenColors.textSecondary, height: 1.5)),
+          Text(
+            l10n.writeDownWords,
+            style: const TextStyle(
+              fontSize: 14,
+              color: HyphenColors.textSecondary,
+              height: 1.5,
+            ),
+          ),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(12),
@@ -178,9 +220,22 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.warning_amber_rounded, color: HyphenColors.warning, size: 20),
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  color: HyphenColors.warning,
+                  size: 20,
+                ),
                 const SizedBox(width: 10),
-                Expanded(child: Text(l10n.neverSharePhrase, style: TextStyle(color: HyphenColors.warning, fontSize: 13, fontWeight: FontWeight.w500))),
+                Expanded(
+                  child: Text(
+                    l10n.neverSharePhrase,
+                    style: TextStyle(
+                      color: HyphenColors.warning,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -191,14 +246,23 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
             child: TextButton.icon(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: _mnemonic ?? ''));
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.phraseCopiedWarning), duration: const Duration(seconds: 3)));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(l10n.phraseCopiedWarning),
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
               },
               icon: const Icon(Icons.copy_rounded, size: 16),
               label: Text(l10n.copyToClipboard),
             ),
           ),
           const SizedBox(height: 24),
-          GradientButton(label: l10n.iveWrittenItDown, onPressed: _goToVerify, icon: Icons.check_rounded),
+          GradientButton(
+            label: l10n.iveWrittenItDown,
+            onPressed: _goToVerify,
+            icon: Icons.check_rounded,
+          ),
           const SizedBox(height: 24),
         ],
       ),
@@ -214,9 +278,23 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
         children: [
           _stepIndicator(1),
           const SizedBox(height: 24),
-          Text(l10n.verifyYourPhrase, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: HyphenColors.textPrimary)),
+          Text(
+            l10n.verifyYourPhrase,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: HyphenColors.textPrimary,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text(l10n.enterWordsToConfirm, style: const TextStyle(fontSize: 14, color: HyphenColors.textSecondary, height: 1.5)),
+          Text(
+            l10n.enterWordsToConfirm,
+            style: const TextStyle(
+              fontSize: 14,
+              color: HyphenColors.textSecondary,
+              height: 1.5,
+            ),
+          ),
           const SizedBox(height: 24),
           ..._verifyIndices.map((idx) {
             return Padding(
@@ -227,8 +305,15 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
                 decoration: InputDecoration(
                   labelText: l10n.wordNumber(idx + 1),
                   prefixIcon: Container(
-                    width: 40, alignment: Alignment.center,
-                    child: Text('${idx + 1}', style: const TextStyle(color: HyphenColors.primary, fontWeight: FontWeight.bold)),
+                    width: 40,
+                    alignment: Alignment.center,
+                    child: Text(
+                      '${idx + 1}',
+                      style: const TextStyle(
+                        color: HyphenColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -236,10 +321,17 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
           }),
           if (_error != null) ...[
             const SizedBox(height: 4),
-            Text(_error!, style: const TextStyle(color: HyphenColors.error, fontSize: 13)),
+            Text(
+              _error!,
+              style: const TextStyle(color: HyphenColors.error, fontSize: 13),
+            ),
           ],
           const SizedBox(height: 24),
-          GradientButton(label: l10n.verifyAndContinue, onPressed: _goToPassword, icon: Icons.verified_outlined),
+          GradientButton(
+            label: l10n.verifyAndContinue,
+            onPressed: _goToPassword,
+            icon: Icons.verified_outlined,
+          ),
           const SizedBox(height: 24),
         ],
       ),
@@ -257,9 +349,23 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
           children: [
             _stepIndicator(2),
             const SizedBox(height: 24),
-            Text(l10n.setPassword, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: HyphenColors.textPrimary)),
+            Text(
+              l10n.setPassword,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: HyphenColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text(l10n.passwordEncryptInfo, style: const TextStyle(fontSize: 14, color: HyphenColors.textSecondary, height: 1.5)),
+            Text(
+              l10n.passwordEncryptInfo,
+              style: const TextStyle(
+                fontSize: 14,
+                color: HyphenColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
             const SizedBox(height: 32),
             TextFormField(
               controller: _passwordController,
@@ -274,8 +380,14 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
                 labelText: l10n.password,
                 prefixIcon: const Icon(Icons.lock_outline, size: 20),
                 suffixIcon: IconButton(
-                  icon: Icon(_obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
-                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    size: 20,
+                  ),
+                  onPressed: () =>
+                      setState(() => _obscurePassword = !_obscurePassword),
                 ),
               ),
             ),
@@ -286,28 +398,48 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
               textInputAction: TextInputAction.done,
               onFieldSubmitted: (_) => _finishCreation(),
               validator: (v) {
-                if (v != _passwordController.text) return l10n.passwordsDoNotMatch;
+                if (v != _passwordController.text) {
+                  return l10n.passwordsDoNotMatch;
+                }
                 return null;
               },
               decoration: InputDecoration(
                 labelText: l10n.confirmPassword,
                 prefixIcon: const Icon(Icons.lock_outline, size: 20),
                 suffixIcon: IconButton(
-                  icon: Icon(_obscureConfirm ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
-                  onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+                  icon: Icon(
+                    _obscureConfirm
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    size: 20,
+                  ),
+                  onPressed: () =>
+                      setState(() => _obscureConfirm = !_obscureConfirm),
                 ),
               ),
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
-              Text(_error!, style: const TextStyle(color: HyphenColors.error, fontSize: 13)),
+              Text(
+                _error!,
+                style: const TextStyle(color: HyphenColors.error, fontSize: 13),
+              ),
             ],
             const SizedBox(height: 32),
             GradientButton(
               label: _loading ? '' : l10n.createWallet,
               onPressed: _loading ? null : _finishCreation,
               icon: _loading ? null : Icons.check_circle_outline,
-              child: _loading ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : null,
+              child: _loading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : null,
             ),
             const SizedBox(height: 24),
           ],
@@ -326,7 +458,9 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
             height: 4,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(2),
-              color: isActive ? HyphenColors.primary : HyphenColors.surfaceLight,
+              color: isActive
+                  ? HyphenColors.primary
+                  : HyphenColors.surfaceLight,
             ),
           ),
         );

@@ -8,9 +8,9 @@
 //   - BIP39 mnemonic generation and validation (12/15/18/21/24 words)
 //   - BIP39 seed derivation (PBKDF2-HMAC-SHA512, 2048 iterations)
 //   - ICD key derivation with BIP44 path structure (m/44'/868'/account'/change/index)
-//   - Quantum-resistant hybrid signatures (Ed25519 + WOTS+)
+//   - Experimental Ed25519 + WOTS message-signature encoding
 //   - Hyphen address generation (hy1... format with blake3 checksum)
-//   - Encrypted wallet storage (blake3-XOF stream cipher + MAC)
+//   - Versioned Argon2id + XChaCha20-Poly1305 wallet storage
 
 use crate::address::HyphenAddress;
 use crate::bip39;
@@ -39,7 +39,7 @@ pub struct KeyPairInfo {
     pub wots_public_hash_hex: String,
 }
 
-/// Hybrid signature result (Ed25519 + WOTS+).
+/// Experimental dual-signature result (Ed25519 + WOTS).
 pub struct SignResult {
     pub ed25519_signature_hex: String,
     pub ed25519_public_hex: String,
@@ -87,13 +87,10 @@ pub fn create_wallet_with_word_count(word_count: u8) -> Result<WalletCreateResul
     wallet_from_mnemonic(mnemonic, String::new())
 }
 
-/// Create a wallet with a password that is transformed through a quantum-resistant
-/// algorithm before being used as the BIP39 passphrase.
+/// Create a wallet using the historical password-to-passphrase transform.
 ///
-/// The password is NOT used directly — it is first passed through WOTS+ hash chains
-/// (67 chains × 15 steps of BLAKE3) to produce a quantum-hardened passphrase.
-/// This ensures the derived seed is secure even against quantum computers running
-/// Grover's algorithm on the BIP39 PBKDF2.
+/// This compatibility transform does not add entropy to a weak password and
+/// must not be described as quantum-resistant.
 pub fn create_wallet_with_password(password: String) -> Result<WalletCreateResult, String> {
     let mnemonic = bip39::generate_mnemonic(24)?;
     let pq_passphrase = pq_transform_password(&password);
@@ -104,7 +101,7 @@ pub fn create_wallet_with_password(password: String) -> Result<WalletCreateResul
 ///
 /// `passphrase` is the optional BIP39 passphrase (empty string if not used).
 /// If a password was used during creation, it must be the same password here —
-/// it will be transformed through the same quantum-resistant algorithm.
+/// it will be transformed through the same historical algorithm.
 pub fn restore_wallet(mnemonic: String, passphrase: String) -> Result<WalletCreateResult, String> {
     if !bip39::validate_mnemonic(&mnemonic) {
         return Err("invalid mnemonic phrase".into());
@@ -112,10 +109,7 @@ pub fn restore_wallet(mnemonic: String, passphrase: String) -> Result<WalletCrea
     wallet_from_mnemonic(mnemonic, passphrase)
 }
 
-/// Restore a wallet using the quantum-resistant password transformation.
-///
-/// The password is transformed through WOTS+ hash chains before being used
-/// as the BIP39 passphrase, matching the process used during creation.
+/// Restore a wallet using the historical password-to-passphrase transform.
 pub fn restore_wallet_with_password(
     mnemonic: String,
     password: String,
@@ -127,7 +121,7 @@ pub fn restore_wallet_with_password(
     wallet_from_mnemonic(mnemonic, pq_passphrase)
 }
 
-/// Transform a raw password into a quantum-resistant passphrase using WOTS+ hash chains.
+/// Historical deterministic password-to-passphrase transform.
 ///
 /// Process:
 ///   1. Derive a 32-byte seed from the password: BLAKE3("Hyphen_PQ_seed" || password)
@@ -137,9 +131,8 @@ pub fn restore_wallet_with_password(
 ///   5. Hash all 67 chain endpoints together to produce the final 32-byte passphrase
 ///   6. Hex-encode the result for use as BIP39 passphrase
 ///
-/// Security: an adversary with a quantum computer would need to invert 67 × 15 = 1005
-/// sequential BLAKE3 hash invocations per guess, nullifying Grover's quadratic speedup
-/// on the individual hash chain structure.
+/// This function exists for deterministic wallet recovery compatibility. It is
+/// not a password KDF and does not increase the source password's entropy.
 pub fn pq_transform_password(password: &str) -> String {
     let seed = crypto::blake3_hash_many(&[b"Hyphen_PQ_seed", password.as_bytes()]);
     let addr_seed = crypto::blake3_hash_many(&[b"Hyphen_PQ_addr", password.as_bytes()]);
@@ -258,13 +251,12 @@ pub fn mnemonic_to_seed_hex(mnemonic: String, passphrase: String) -> Result<Stri
     Ok(hex::encode(seed))
 }
 
-// --- Signing Operations (Hybrid Ed25519 + WOTS+) ---
+// --- Experimental message-signing operations ---
 
-/// Sign a message with hybrid quantum-resistant signature.
+/// Sign a message with the experimental Ed25519 + WOTS encoding.
 ///
-/// Uses both Ed25519 and WOTS+ to create a dual signature.
-/// Even if elliptic curves are broken by quantum computers,
-/// the WOTS+ signature remains secure.
+/// The WOTS public key is not anchored by chain consensus or a persistent
+/// identity registry, and this stateless API cannot enforce one-time use.
 pub fn sign_message(
     seed_hex: String,
     account: u32,
@@ -309,7 +301,7 @@ pub fn sign_message(
     })
 }
 
-/// Verify a hybrid signature.
+/// Verify the syntax and equations of an experimental dual signature.
 pub fn verify_signature(
     message: Vec<u8>,
     ed25519_signature_hex: String,
@@ -382,44 +374,120 @@ pub fn is_mainnet_address(address: String) -> Result<bool, String> {
 
 // --- Encrypted Wallet Storage ---
 
-/// Encrypt wallet data (mnemonic) with a password.
-///
-/// Format: [salt:32] [mac:32] [ciphertext:N]
-/// KDF: 100,000 iterations of blake3
-/// Cipher: blake3-XOF stream cipher
-/// MAC: blake3 keyed hash (encrypt-then-MAC)
-pub fn encrypt_wallet(mnemonic: String, password: String) -> Vec<u8> {
-    let data = mnemonic.as_bytes();
+const WALLET_MAGIC: &[u8; 8] = b"HYWLT001";
+const WALLET_HEADER_LEN: usize = 64;
+const WALLET_SALT_LEN: usize = 16;
+const WALLET_NONCE_LEN: usize = 24;
+const WALLET_ARGON2_MEMORY_KIB: u32 = 65_536;
+const WALLET_ARGON2_ITERATIONS: u32 = 3;
+const WALLET_ARGON2_LANES: u32 = 1;
 
-    // Generate random salt
-    let mut salt = [0u8; 32];
+/// Encrypt a mnemonic using a versioned Argon2id + XChaCha20-Poly1305 envelope.
+pub fn encrypt_wallet(mnemonic: String, password: String) -> Result<Vec<u8>, String> {
+    use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+    use chacha20poly1305::{XChaCha20Poly1305, XNonce};
+
+    let mut salt = [0u8; WALLET_SALT_LEN];
+    let mut nonce = [0u8; WALLET_NONCE_LEN];
     rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut salt);
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce);
 
-    // Derive encryption key
-    let key = derive_wallet_key(password.as_bytes(), &salt);
+    let mut header = Vec::with_capacity(WALLET_HEADER_LEN);
+    header.extend_from_slice(WALLET_MAGIC);
+    header.extend_from_slice(&[1, 1, 1, 0]);
+    header.extend_from_slice(&WALLET_ARGON2_MEMORY_KIB.to_be_bytes());
+    header.extend_from_slice(&WALLET_ARGON2_ITERATIONS.to_be_bytes());
+    header.extend_from_slice(&WALLET_ARGON2_LANES.to_be_bytes());
+    header.extend_from_slice(&salt);
+    header.extend_from_slice(&nonce);
+    debug_assert_eq!(header.len(), WALLET_HEADER_LEN);
 
-    // Encrypt
-    let ciphertext = xof_encrypt(&key, data);
+    let mut key = derive_argon2id_key(password.as_bytes(), &salt)?;
+    let cipher = XChaCha20Poly1305::new((&key).into());
+    let ciphertext = cipher
+        .encrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: mnemonic.as_bytes(),
+                aad: &header,
+            },
+        )
+        .map_err(|_| "wallet encryption failed".to_string())?;
+    zeroize::Zeroize::zeroize(&mut key);
 
-    // Compute MAC over ciphertext
-    let mac = crypto::blake3_keyed(&key, &ciphertext);
-
-    // Assemble output: salt || mac || ciphertext
-    let mut out = Vec::with_capacity(32 + 32 + ciphertext.len());
-    out.extend_from_slice(&salt);
-    out.extend_from_slice(mac.as_bytes());
-    out.extend_from_slice(&ciphertext);
-    out
+    header.extend_from_slice(&ciphertext);
+    Ok(header)
 }
 
-/// Decrypt wallet data with a password.
-///
-/// Returns the mnemonic string if the password is correct.
+/// Decrypt the current wallet format or the historical read-only format.
 pub fn decrypt_wallet(encrypted_data: Vec<u8>, password: String) -> Result<String, String> {
+    if encrypted_data.starts_with(WALLET_MAGIC) {
+        decrypt_current_wallet(&encrypted_data, password.as_bytes())
+    } else {
+        decrypt_legacy_wallet(&encrypted_data, password.as_bytes())
+    }
+}
+
+fn decrypt_current_wallet(encrypted_data: &[u8], password: &[u8]) -> Result<String, String> {
+    use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+    use chacha20poly1305::{XChaCha20Poly1305, XNonce};
+
+    if encrypted_data.len() < WALLET_HEADER_LEN + 16 {
+        return Err("encrypted wallet is truncated".into());
+    }
+    if encrypted_data[8..12] != [1, 1, 1, 0] {
+        return Err("unsupported encrypted-wallet format".into());
+    }
+    let memory_kib = u32::from_be_bytes(encrypted_data[12..16].try_into().unwrap());
+    let iterations = u32::from_be_bytes(encrypted_data[16..20].try_into().unwrap());
+    let lanes = u32::from_be_bytes(encrypted_data[20..24].try_into().unwrap());
+    if memory_kib != WALLET_ARGON2_MEMORY_KIB
+        || iterations != WALLET_ARGON2_ITERATIONS
+        || lanes != WALLET_ARGON2_LANES
+    {
+        return Err("unsupported encrypted-wallet KDF parameters".into());
+    }
+    let salt: [u8; WALLET_SALT_LEN] = encrypted_data[24..40].try_into().unwrap();
+    let nonce: [u8; WALLET_NONCE_LEN] = encrypted_data[40..64].try_into().unwrap();
+    let mut key = derive_argon2id_key(password, &salt)?;
+    let cipher = XChaCha20Poly1305::new((&key).into());
+    let plaintext = cipher
+        .decrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: &encrypted_data[WALLET_HEADER_LEN..],
+                aad: &encrypted_data[..WALLET_HEADER_LEN],
+            },
+        )
+        .map_err(|_| "wrong password or corrupted data".to_string());
+    zeroize::Zeroize::zeroize(&mut key);
+    String::from_utf8(plaintext?).map_err(|_| "wallet plaintext is not valid UTF-8".into())
+}
+
+fn derive_argon2id_key(password: &[u8], salt: &[u8; WALLET_SALT_LEN]) -> Result<[u8; 32], String> {
+    use argon2::{Algorithm, Argon2, Params, Version};
+
+    let params = Params::new(
+        WALLET_ARGON2_MEMORY_KIB,
+        WALLET_ARGON2_ITERATIONS,
+        WALLET_ARGON2_LANES,
+        Some(32),
+    )
+    .map_err(|error| format!("invalid wallet KDF parameters: {error}"))?;
+    let password_digest = blake3::derive_key("Hyphen wallet password prehash v1", password);
+    let mut key = [0u8; 32];
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
+        .hash_password_into(&password_digest, salt, &mut key)
+        .map_err(|error| format!("wallet KDF failed: {error}"))?;
+    Ok(key)
+}
+
+fn decrypt_legacy_wallet(encrypted_data: &[u8], password: &[u8]) -> Result<String, String> {
+    use subtle::ConstantTimeEq;
+
     if encrypted_data.len() < 64 {
         return Err("encrypted data too short".into());
     }
-
     let salt: [u8; 32] = encrypted_data[..32]
         .try_into()
         .map_err(|_| "invalid salt")?;
@@ -427,23 +495,18 @@ pub fn decrypt_wallet(encrypted_data: Vec<u8>, password: String) -> Result<Strin
         .try_into()
         .map_err(|_| "invalid mac")?;
     let ciphertext = &encrypted_data[64..];
-
-    // Derive key
-    let key = derive_wallet_key(password.as_bytes(), &salt);
-
-    // Verify MAC before decryption
+    let mut key = derive_legacy_wallet_key(password, &salt);
     let computed_mac = crypto::blake3_keyed(&key, ciphertext);
-    if computed_mac.as_bytes() != &stored_mac {
+    if computed_mac.as_bytes().ct_eq(&stored_mac).unwrap_u8() != 1 {
+        zeroize::Zeroize::zeroize(&mut key);
         return Err("wrong password or corrupted data".into());
     }
-
-    // Decrypt
-    let plaintext = xof_encrypt(&key, ciphertext);
-    String::from_utf8(plaintext).map_err(|e| format!("invalid utf8: {e}"))
+    let plaintext = legacy_xof_encrypt(&key, ciphertext);
+    zeroize::Zeroize::zeroize(&mut key);
+    String::from_utf8(plaintext).map_err(|_| "wallet plaintext is not valid UTF-8".into())
 }
 
-/// Derive encryption key from password and salt using iterated blake3.
-fn derive_wallet_key(password: &[u8], salt: &[u8; 32]) -> [u8; 32] {
+fn derive_legacy_wallet_key(password: &[u8], salt: &[u8; 32]) -> [u8; 32] {
     let mut state = crypto::blake3_hash(&[salt.as_slice(), password].concat());
     for _ in 0..100_000 {
         state = crypto::blake3_hash(state.as_bytes());
@@ -452,7 +515,7 @@ fn derive_wallet_key(password: &[u8], salt: &[u8; 32]) -> [u8; 32] {
 }
 
 /// Symmetric encryption/decryption using blake3 XOF as a stream cipher.
-fn xof_encrypt(key: &[u8; 32], data: &[u8]) -> Vec<u8> {
+fn legacy_xof_encrypt(key: &[u8; 32], data: &[u8]) -> Vec<u8> {
     let mut h = blake3::Hasher::new_keyed(key);
     h.update(b"Hyphen_wallet_stream");
     let mut stream = h.finalize_xof();
@@ -469,7 +532,7 @@ fn xof_encrypt(key: &[u8; 32], data: &[u8]) -> Vec<u8> {
 
 /// Get wallet version info.
 pub fn wallet_version() -> String {
-    "Hyphen Wallet v0.1.0 (BIP39/BIP44/ICD/WOTS+)".to_string()
+    "Hyphen Wallet v0.1.0 (experimental)".to_string()
 }
 
 /// Get the coin type used for BIP44 derivation.
@@ -553,6 +616,7 @@ pub fn scan_wallet_outputs(
 /// Selects inputs from owned outputs, fetches decoys for ring signatures,
 /// constructs a CLSAG-signed transaction with range proofs, and submits
 /// it to the node.
+#[allow(clippy::too_many_arguments)]
 pub fn send_transaction(
     host: String,
     port: u16,
@@ -564,17 +628,18 @@ pub fn send_transaction(
     owned_outputs_json: String,
     ring_size: u32,
 ) -> Result<TransactionSendResult, String> {
-    let result = crate::transfer::build_and_send_transaction(
-        host,
-        port,
-        seed_hex,
-        account,
-        recipient_address,
-        amount,
-        fee,
-        owned_outputs_json,
-        ring_size,
-    )?;
+    let result =
+        crate::transfer::build_and_send_transaction(crate::transfer::TransactionRequest {
+            host,
+            port,
+            seed_hex,
+            account,
+            recipient_address,
+            amount,
+            fee,
+            owned_outputs_json,
+            ring_size,
+        })?;
     Ok(TransactionSendResult {
         tx_hash_hex: result.tx_hash_hex,
         accepted: result.accepted,
@@ -582,4 +647,55 @@ pub fn send_transaction(
         spent_indices_csv: result.spent_indices_csv,
         vre_used_adaptive: result.vre_used_adaptive,
     })
+}
+
+#[cfg(test)]
+mod encrypted_wallet_tests {
+    use super::*;
+
+    const MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    #[test]
+    fn current_envelope_roundtrips_and_authenticates_every_byte() {
+        let encrypted = encrypt_wallet(MNEMONIC.into(), "correct horse".into()).unwrap();
+        assert!(encrypted.starts_with(WALLET_MAGIC));
+        assert_eq!(
+            decrypt_wallet(encrypted.clone(), "correct horse".into()).unwrap(),
+            MNEMONIC
+        );
+        assert!(decrypt_wallet(encrypted.clone(), "wrong password".into()).is_err());
+
+        let mut tampered_header = encrypted.clone();
+        tampered_header[40] ^= 1;
+        assert!(decrypt_wallet(tampered_header, "correct horse".into()).is_err());
+
+        let mut tampered_ciphertext = encrypted;
+        *tampered_ciphertext.last_mut().unwrap() ^= 1;
+        assert!(decrypt_wallet(tampered_ciphertext, "correct horse".into()).is_err());
+    }
+
+    #[test]
+    fn encryption_uses_fresh_salt_and_nonce() {
+        let first = encrypt_wallet(MNEMONIC.into(), "password".into()).unwrap();
+        let second = encrypt_wallet(MNEMONIC.into(), "password".into()).unwrap();
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn historical_envelope_remains_readable_for_migration() {
+        let password = b"legacy password";
+        let salt = [7u8; 32];
+        let key = derive_legacy_wallet_key(password, &salt);
+        let ciphertext = legacy_xof_encrypt(&key, MNEMONIC.as_bytes());
+        let mac = crypto::blake3_keyed(&key, &ciphertext);
+        let mut envelope = Vec::new();
+        envelope.extend_from_slice(&salt);
+        envelope.extend_from_slice(mac.as_bytes());
+        envelope.extend_from_slice(&ciphertext);
+
+        assert_eq!(
+            decrypt_wallet(envelope, String::from_utf8(password.to_vec()).unwrap()).unwrap(),
+            MNEMONIC
+        );
+    }
 }

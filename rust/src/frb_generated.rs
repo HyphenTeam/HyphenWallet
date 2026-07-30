@@ -281,11 +281,8 @@ fn wire__crate__api__wallet__encrypt_wallet_impl(
             let api_password = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, ()>((move || {
-                    let output_ok = Result::<_, ()>::Ok(crate::api::wallet::encrypt_wallet(
-                        api_mnemonic,
-                        api_password,
-                    ))?;
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::wallet::encrypt_wallet(api_mnemonic, api_password)?;
                     Ok(output_ok)
                 })())
             }

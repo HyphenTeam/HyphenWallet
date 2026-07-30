@@ -75,7 +75,9 @@ class _SendScreenState extends State<SendScreen> {
   /// Shows a password confirmation dialog. Returns true if the password is
   /// correct, false/null if the user cancels or enters the wrong password.
   Future<bool?> _showPasswordDialog(
-      AppLocalizations l10n, WalletService walletService) async {
+    AppLocalizations l10n,
+    WalletService walletService,
+  ) async {
     final controller = TextEditingController();
     String? errorText;
     bool verifying = false;
@@ -108,6 +110,7 @@ class _SendScreenState extends State<SendScreen> {
                     errorText = null;
                   });
                   final ok = await walletService.verifyPassword(pw);
+                  if (!ctx.mounted) return;
                   if (ok) {
                     Navigator.pop(ctx, true);
                   } else {
@@ -130,7 +133,8 @@ class _SendScreenState extends State<SendScreen> {
                           final pw = controller.text;
                           if (pw.isEmpty) {
                             setDialogState(
-                                () => errorText = l10n.passwordRequired);
+                              () => errorText = l10n.passwordRequired,
+                            );
                             return;
                           }
                           setDialogState(() {
@@ -138,6 +142,7 @@ class _SendScreenState extends State<SendScreen> {
                             errorText = null;
                           });
                           final ok = await walletService.verifyPassword(pw);
+                          if (!ctx.mounted) return;
                           if (ok) {
                             Navigator.pop(ctx, true);
                           } else {
@@ -151,7 +156,8 @@ class _SendScreenState extends State<SendScreen> {
                       ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : Text(l10n.unlock),
                 ),
               ],
@@ -180,35 +186,49 @@ class _SendScreenState extends State<SendScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(l10n.recipient,
-                style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
-            SelectableText(recipientText,
-                style: const TextStyle(fontSize: 13, fontFamily: 'monospace')),
+            Text(
+              l10n.recipient,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            SelectableText(
+              recipientText,
+              style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+            ),
             const SizedBox(height: 12),
-            Text(l10n.amount,
-                style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
-            Text('$amountHyp HYP',
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(
+              l10n.amount,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            Text(
+              '$amountHyp HYP',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
-            Text(l10n.networkFee,
-                style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+            Text(
+              l10n.networkFee,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+              ),
+            ),
             Text('$feeHyp HYP', style: const TextStyle(fontSize: 14)),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.cancel)),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(l10n.send)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.send),
+          ),
         ],
       ),
     );
@@ -223,8 +243,9 @@ class _SendScreenState extends State<SendScreen> {
       );
       if (!authed) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(l10n.biometricUnlock)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.biometricUnlock)));
         return;
       }
     } else {
@@ -242,9 +263,9 @@ class _SendScreenState extends State<SendScreen> {
         await walletService.scanWalletOutputs();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Scan failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Scan failed: $e')));
         return;
       }
 
@@ -256,9 +277,9 @@ class _SendScreenState extends State<SendScreen> {
       final balance = await walletService.getSpendableBalance();
       if (balance < amountAtomic + feeAtomic) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Insufficient balance')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Insufficient balance')));
         return;
       }
 
@@ -297,18 +318,27 @@ class _SendScreenState extends State<SendScreen> {
                     decoration: BoxDecoration(
                       color: Colors.orange.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: Colors.orange.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.info_outline, color: Colors.orange, size: 18),
+                        Icon(
+                          Icons.info_outline,
+                          color: Colors.orange,
+                          size: 18,
+                        ),
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'Adaptive VRE parameters were used because the '
                             'chain is still young. Ring entropy will increase '
                             'automatically as the network grows.',
-                            style: TextStyle(fontSize: 12, color: Colors.orange),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange,
+                            ),
                           ),
                         ),
                       ],
@@ -318,10 +348,7 @@ class _SendScreenState extends State<SendScreen> {
                 const SizedBox(height: 12),
                 SelectableText(
                   'TX: ${result.txHashHex}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontFamily: 'monospace',
-                  ),
+                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
                 ),
               ],
             ),
@@ -345,9 +372,9 @@ class _SendScreenState extends State<SendScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Send failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Send failed: $e')));
     } finally {
       if (mounted) {
         setState(() => _isSending = false);

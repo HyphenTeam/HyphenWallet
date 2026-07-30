@@ -115,7 +115,7 @@ class TransferActivity {
   final String amountAtomic;
   final String feeAtomic;
   final int timestamp; // unix seconds
-  final int? height;   // null if pending
+  final int? height; // null if pending
 
   const TransferActivity({
     required this.direction,
@@ -137,17 +137,18 @@ class TransferActivity {
     'height': height,
   };
 
-  factory TransferActivity.fromJson(Map<String, dynamic> json) => TransferActivity(
-    direction: json['direction'] == 'sent'
-        ? TransferDirection.sent
-        : TransferDirection.received,
-    txHashHex: json['txHashHex'] as String? ?? '',
-    recipientAddress: json['recipientAddress'] as String? ?? '',
-    amountAtomic: json['amountAtomic'] as String? ?? '0',
-    feeAtomic: json['feeAtomic'] as String? ?? '0',
-    timestamp: json['timestamp'] as int? ?? 0,
-    height: json['height'] as int?,
-  );
+  factory TransferActivity.fromJson(Map<String, dynamic> json) =>
+      TransferActivity(
+        direction: json['direction'] == 'sent'
+            ? TransferDirection.sent
+            : TransferDirection.received,
+        txHashHex: json['txHashHex'] as String? ?? '',
+        recipientAddress: json['recipientAddress'] as String? ?? '',
+        amountAtomic: json['amountAtomic'] as String? ?? '0',
+        feeAtomic: json['feeAtomic'] as String? ?? '0',
+        timestamp: json['timestamp'] as int? ?? 0,
+        height: json['height'] as int?,
+      );
 }
 
 class RewardActivity {
@@ -514,8 +515,7 @@ class WalletService extends ChangeNotifier {
   }
 
   /// Whether the current platform supports biometric authentication.
-  bool get isBiometricPlatform =>
-      Platform.isAndroid || Platform.isIOS;
+  bool get isBiometricPlatform => Platform.isAndroid || Platform.isIOS;
 
   Future<String> createWallet(String password, {String? name}) async {
     final pqPassphrase = await rust.pqTransformPassword(password: password);
@@ -889,8 +889,7 @@ class WalletService extends ChangeNotifier {
   /// [amountAtomic] is the amount in atomic units (1 HYP = 1e12 atomic).
   /// [feeAtomic] is the transaction fee in atomic units.
   /// The consensus-mandated ring size for the current network.
-  int get networkRingSize =>
-      _state.network == HyphenNetwork.mainnet ? 16 : 4;
+  int get networkRingSize => _state.network == HyphenNetwork.mainnet ? 16 : 4;
 
   Future<rust.TransactionSendResult> sendTransaction({
     required String recipientAddress,
@@ -977,9 +976,7 @@ class WalletService extends ChangeNotifier {
   Future<void> loadTransferHistory() async {
     final walletId = _state.activeWalletId;
     if (walletId == null) return;
-    final raw = await _storage.read(
-      key: '${_kTransferHistory}_$walletId',
-    );
+    final raw = await _storage.read(key: '${_kTransferHistory}_$walletId');
     if (raw == null || raw.isEmpty) return;
     try {
       final list = (jsonDecode(raw) as List)

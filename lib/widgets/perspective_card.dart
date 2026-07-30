@@ -80,8 +80,7 @@ class _PerspectiveCardState extends State<PerspectiveCard>
       onPanEnd: _onPanEnd,
       onPanCancel: () => _onPanEnd(DragEndDetails()),
       child: AnimatedContainer(
-        duration:
-            _touching ? Duration.zero : const Duration(milliseconds: 300),
+        duration: _touching ? Duration.zero : const Duration(milliseconds: 300),
         curve: Curves.easeOutCubic,
         transformAlignment: Alignment.center,
         transform: Matrix4.identity()
@@ -98,10 +97,7 @@ class _PerspectiveCardState extends State<PerspectiveCard>
                 ),
                 blurRadius: widget.elevation + (_touching ? 12 : 0),
                 spreadRadius: _touching ? 2 : 0,
-                offset: Offset(
-                  _rotY * 30,
-                  -_rotX * 30 + 4,
-                ),
+                offset: Offset(_rotY * 30, -_rotX * 30 + 4),
               ),
             ],
           ),
@@ -170,10 +166,16 @@ class _FloatingOrbState extends State<FloatingOrb>
               shape: BoxShape.circle,
               gradient: RadialGradient(
                 colors: [
-                  Color.lerp(widget.color1, widget.color2, t)!
-                      .withValues(alpha: 0.25),
-                  Color.lerp(widget.color2, widget.color1, t)!
-                      .withValues(alpha: 0.05),
+                  Color.lerp(
+                    widget.color1,
+                    widget.color2,
+                    t,
+                  )!.withValues(alpha: 0.25),
+                  Color.lerp(
+                    widget.color2,
+                    widget.color1,
+                    t,
+                  )!.withValues(alpha: 0.05),
                 ],
               ),
             ),

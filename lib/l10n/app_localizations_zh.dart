@@ -12,22 +12,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appTitle => 'Hyphen 钱包';
 
   @override
-  String get quantumResistantWallet => '抗量子钱包';
+  String get quantumResistantWallet => 'Hyphen 钱包';
 
   @override
   String get welcomeToHyphen => '欢迎来到 Hyphen';
 
   @override
-  String get welcomeSubtitle => '为 Hyphen 区块链打造的\n抗量子隐私钱包。';
+  String get welcomeSubtitle => '面向 Hyphen 开发网络的\n桌面钱包。';
 
   @override
   String get wotsSignatures => 'WOTS+ 签名';
 
   @override
-  String get aesEncryption => 'AES-256 加密';
+  String get aesEncryption => '认证加密';
 
   @override
-  String get privacyFirst => '隐私优先';
+  String get privacyFirst => '本地密钥存储';
 
   @override
   String get createNewWallet => '创建新钱包';
@@ -195,13 +195,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get securityFeatures => '安全特性';
 
   @override
-  String get wotsQuantumResistant => 'WOTS+ 抗量子签名';
+  String get wotsQuantumResistant => '实验性 WOTS+ 签名';
 
   @override
-  String get aes256GcmEncryption => 'AES-256-GCM 加密';
+  String get aes256GcmEncryption => 'XChaCha20-Poly1305';
 
   @override
-  String get blake3Kdf => 'Blake3 KDF（10万轮）';
+  String get blake3Kdf => 'Argon2id（64 MiB，3 次迭代）';
 
   @override
   String get icdStealthKeys => 'ICD 隐身密钥';

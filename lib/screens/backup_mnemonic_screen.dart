@@ -40,9 +40,23 @@ class _BackupMnemonicScreenState extends State<BackupMnemonicScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber_rounded, color: HyphenColors.warning, size: 20),
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    color: HyphenColors.warning,
+                    size: 20,
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: Text(l10n.neverShareWarning, style: TextStyle(color: HyphenColors.warning, fontSize: 13, fontWeight: FontWeight.w500, height: 1.4))),
+                  Expanded(
+                    child: Text(
+                      l10n.neverShareWarning,
+                      style: TextStyle(
+                        color: HyphenColors.warning,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -52,9 +66,19 @@ class _BackupMnemonicScreenState extends State<BackupMnemonicScreen> {
                 child: Column(
                   children: [
                     const SizedBox(height: 40),
-                    Icon(Icons.visibility_off_rounded, size: 64, color: HyphenColors.textSecondary.withAlpha(100)),
+                    Icon(
+                      Icons.visibility_off_rounded,
+                      size: 64,
+                      color: HyphenColors.textSecondary.withAlpha(100),
+                    ),
                     const SizedBox(height: 16),
-                    Text(l10n.tapBelowToReveal, style: const TextStyle(color: HyphenColors.textSecondary, fontSize: 14)),
+                    Text(
+                      l10n.tapBelowToReveal,
+                      style: const TextStyle(
+                        color: HyphenColors.textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
                       onPressed: () => setState(() => _revealed = true),
@@ -63,8 +87,13 @@ class _BackupMnemonicScreenState extends State<BackupMnemonicScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: HyphenColors.primary,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ],
@@ -79,7 +108,12 @@ class _BackupMnemonicScreenState extends State<BackupMnemonicScreen> {
                   TextButton.icon(
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: mnemonic ?? ''));
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.copiedClearClipboard), duration: const Duration(seconds: 3)));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(l10n.copiedClearClipboard),
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
                     },
                     icon: const Icon(Icons.copy_rounded, size: 16),
                     label: Text(l10n.copyToClipboard),

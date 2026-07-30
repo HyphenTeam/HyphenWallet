@@ -16,9 +16,9 @@ path = "src/bin/payout_agent.rs"
 flutter_rust_bridge = "=2.11.1"
 
 # Hyphen blockchain crates
-hyphen-crypto = { path = "../../crates/hyphen-crypto" }
-hyphen-tx     = { path = "../../crates/hyphen-tx" }
-hyphen-proof  = { path = "../../crates/hyphen-proof" }
+hyphen-crypto = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "fef7290dcbbeea20e8d231bf2ffcd13982a7046b" }
+hyphen-tx     = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "fef7290dcbbeea20e8d231bf2ffcd13982a7046b" }
+hyphen-proof  = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "fef7290dcbbeea20e8d231bf2ffcd13982a7046b" }
 
 # Cryptography
 blake3 = "1.8"
@@ -28,6 +28,9 @@ sha2 = "0.10"
 hmac = "0.12"
 pbkdf2 = { version = "0.12", features = ["simple"] }
 merlin = "3"
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
+subtle = "2.6"
 
 # Randomness
 rand = "0.8"

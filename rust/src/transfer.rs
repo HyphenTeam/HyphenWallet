@@ -272,6 +272,18 @@ pub fn scan_wallet_outputs(
 
 // ─── Transaction building + submission ──────────────────────
 
+pub struct TransactionRequest {
+    pub host: String,
+    pub port: u16,
+    pub seed_hex: String,
+    pub account: u32,
+    pub recipient_address: String,
+    pub amount: u64,
+    pub fee: u64,
+    pub owned_outputs_json: String,
+    pub ring_size: u32,
+}
+
 /// Build a shielded transaction and submit it to the node.
 ///
 /// This function:
@@ -279,19 +291,20 @@ pub fn scan_wallet_outputs(
 /// 2. Fetches random decoy outputs from the node for ring signatures
 /// 3. Constructs the transaction with CLSAG signatures and range proofs
 /// 4. Serializes and submits via RPC
-pub fn build_and_send_transaction(
-    host: String,
-    port: u16,
-    seed_hex: String,
-    account: u32,
-    recipient_address: String,
-    amount: u64,
-    fee: u64,
-    owned_outputs_json: String,
-    ring_size: u32,
-) -> Result<SendResult, String> {
-    let built = build_transaction(
-        host.clone(),
+pub fn build_and_send_transaction(request: TransactionRequest) -> Result<SendResult, String> {
+    let host = request.host.clone();
+    let port = request.port;
+    let built = build_transaction(request)?;
+    submit_built_transaction(host, port, built)
+}
+
+/// Build and sign a transaction without broadcasting it.
+///
+/// Callers that need crash-safe delivery must persist the returned value
+/// before calling [`submit_built_transaction`].
+pub fn build_transaction(request: TransactionRequest) -> Result<BuiltTransaction, String> {
+    let TransactionRequest {
+        host,
         port,
         seed_hex,
         account,
@@ -300,26 +313,7 @@ pub fn build_and_send_transaction(
         fee,
         owned_outputs_json,
         ring_size,
-    )?;
-    submit_built_transaction(host, port, built)
-}
-
-/// Build and sign a transaction without broadcasting it.
-///
-/// Callers that need crash-safe delivery must persist the returned value
-/// before calling [`submit_built_transaction`].
-#[allow(clippy::too_many_arguments)]
-pub fn build_transaction(
-    host: String,
-    port: u16,
-    seed_hex: String,
-    account: u32,
-    recipient_address: String,
-    amount: u64,
-    fee: u64,
-    owned_outputs_json: String,
-    ring_size: u32,
-) -> Result<BuiltTransaction, String> {
+    } = request;
     if amount == 0 {
         return Err("amount must be greater than 0".into());
     }
@@ -609,7 +603,7 @@ fn select_inputs(outputs: &[WalletOutput], total_needed: u64) -> Result<Vec<Wall
     }
 
     let mut sorted: Vec<&WalletOutput> = outputs.iter().collect();
-    sorted.sort_by(|a, b| b.value.cmp(&a.value));
+    sorted.sort_by_key(|output| std::cmp::Reverse(output.value));
 
     let mut selected = Vec::new();
     let mut accumulated = 0u64;
@@ -879,7 +873,7 @@ fn check_ring_vre(
     let mut unique_h = heights.clone();
     unique_h.sort_unstable();
     unique_h.dedup();
-    let min_distinct = (ring_size * 3 + 3) / 4;
+    let min_distinct = (ring_size * 3).div_ceil(4);
     if unique_h.len() < min_distinct {
         return false;
     }
@@ -931,7 +925,7 @@ fn audit_decoy_distribution(decoy_indices: &[u64], total_outputs: u64) -> Result
     }
 
     let max_in_band = *band_counts.values().max().unwrap_or(&0);
-    let threshold = ((decoy_indices.len() as u32) + 1) / 2;
+    let threshold = (decoy_indices.len() as u32).div_ceil(2);
     if max_in_band > threshold {
         return Err(format!(
             "suspicious decoy clustering: {} of {} decoys in same index band — \

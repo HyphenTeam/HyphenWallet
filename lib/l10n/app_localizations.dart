@@ -117,7 +117,7 @@ abstract class AppLocalizations {
   /// No description provided for @quantumResistantWallet.
   ///
   /// In en, this message translates to:
-  /// **'Quantum-Resistant Wallet'**
+  /// **'Hyphen Wallet'**
   String get quantumResistantWallet;
 
   /// No description provided for @welcomeToHyphen.
@@ -129,7 +129,7 @@ abstract class AppLocalizations {
   /// No description provided for @welcomeSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'A quantum-resistant privacy wallet\nbuilt for the Hyphen blockchain.'**
+  /// **'A desktop wallet for\nHyphen development networks.'**
   String get welcomeSubtitle;
 
   /// No description provided for @wotsSignatures.
@@ -141,13 +141,13 @@ abstract class AppLocalizations {
   /// No description provided for @aesEncryption.
   ///
   /// In en, this message translates to:
-  /// **'AES-256 Encryption'**
+  /// **'Authenticated Encryption'**
   String get aesEncryption;
 
   /// No description provided for @privacyFirst.
   ///
   /// In en, this message translates to:
-  /// **'Privacy First'**
+  /// **'Local Key Storage'**
   String get privacyFirst;
 
   /// No description provided for @createNewWallet.
@@ -459,19 +459,19 @@ abstract class AppLocalizations {
   /// No description provided for @wotsQuantumResistant.
   ///
   /// In en, this message translates to:
-  /// **'WOTS+ Quantum-Resistant'**
+  /// **'Experimental WOTS+ signing'**
   String get wotsQuantumResistant;
 
   /// No description provided for @aes256GcmEncryption.
   ///
   /// In en, this message translates to:
-  /// **'AES-256-GCM Encryption'**
+  /// **'XChaCha20-Poly1305'**
   String get aes256GcmEncryption;
 
   /// No description provided for @blake3Kdf.
   ///
   /// In en, this message translates to:
-  /// **'Blake3 KDF (100k rounds)'**
+  /// **'Argon2id (64 MiB, 3 passes)'**
   String get blake3Kdf;
 
   /// No description provided for @icdStealthKeys.

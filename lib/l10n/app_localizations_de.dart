@@ -12,23 +12,23 @@ class AppLocalizationsDe extends AppLocalizations {
   String get appTitle => 'Hyphen Wallet';
 
   @override
-  String get quantumResistantWallet => 'Quantenresistente Wallet';
+  String get quantumResistantWallet => 'Hyphen Wallet';
 
   @override
   String get welcomeToHyphen => 'Willkommen bei Hyphen';
 
   @override
   String get welcomeSubtitle =>
-      'Eine quantenresistente Datenschutz-Wallet\nfür die Hyphen-Blockchain.';
+      'Eine Desktop-Wallet für\nHyphen-Entwicklungsnetze.';
 
   @override
   String get wotsSignatures => 'WOTS+ Signaturen';
 
   @override
-  String get aesEncryption => 'AES-256-Verschlüsselung';
+  String get aesEncryption => 'Authentifizierte Verschlüsselung';
 
   @override
-  String get privacyFirst => 'Datenschutz zuerst';
+  String get privacyFirst => 'Lokale Schlüsselspeicherung';
 
   @override
   String get createNewWallet => 'Neue Wallet erstellen';
@@ -203,13 +203,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get securityFeatures => 'Sicherheitsfunktionen';
 
   @override
-  String get wotsQuantumResistant => 'WOTS+ Quantenresistent';
+  String get wotsQuantumResistant => 'Experimentelle WOTS+-Signatur';
 
   @override
-  String get aes256GcmEncryption => 'AES-256-GCM-Verschlüsselung';
+  String get aes256GcmEncryption => 'XChaCha20-Poly1305';
 
   @override
-  String get blake3Kdf => 'Blake3 KDF (100k Runden)';
+  String get blake3Kdf => 'Argon2id (64 MiB, 3 Durchläufe)';
 
   @override
   String get icdStealthKeys => 'ICD Stealth-Schlüssel';

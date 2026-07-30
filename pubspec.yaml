@@ -1,5 +1,5 @@
 name: hyphen_wallet
-description: "Hyphen blockchain wallet — quantum-resistant, privacy-focused"
+description: "Experimental desktop wallet for the Hyphen blockchain"
 publish_to: 'none'
 
 version: 1.0.0+1

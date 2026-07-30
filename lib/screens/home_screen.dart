@@ -525,7 +525,9 @@ class _PoolInfoStrip extends StatelessWidget {
                 return Text(
                   mode,
                   style: TextStyle(
-                    color: dark ? Theme.of(ctx).colorScheme.primary : HyphenColors.forestGreen,
+                    color: dark
+                        ? Theme.of(ctx).colorScheme.primary
+                        : HyphenColors.forestGreen,
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -716,7 +718,8 @@ class _AddressCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     side: BorderSide(color: cs.outline),
-                    foregroundColor: Theme.of(context).brightness == Brightness.dark
+                    foregroundColor:
+                        Theme.of(context).brightness == Brightness.dark
                         ? Theme.of(context).colorScheme.primary
                         : HyphenColors.forestGreen,
                   ),
@@ -817,16 +820,10 @@ class _ActivityTab extends StatelessWidget {
     final List<_UnifiedActivity> unified = [];
 
     for (final r in state.rewardActivities) {
-      unified.add(_UnifiedActivity(
-        timestamp: r.timestamp,
-        reward: r,
-      ));
+      unified.add(_UnifiedActivity(timestamp: r.timestamp, reward: r));
     }
     for (final t in state.transferActivities) {
-      unified.add(_UnifiedActivity(
-        timestamp: t.timestamp,
-        transfer: t,
-      ));
+      unified.add(_UnifiedActivity(timestamp: t.timestamp, transfer: t));
     }
     // Sort newest first
     unified.sort((a, b) => b.timestamp.compareTo(a.timestamp));
@@ -870,7 +867,7 @@ class _ActivityTab extends StatelessWidget {
         else
           SliverList.separated(
             itemCount: unified.length,
-            separatorBuilder: (_, __) =>
+            separatorBuilder: (_, _) =>
                 const Divider(height: 1, indent: 60, endIndent: 20),
             itemBuilder: (context, i) {
               final item = unified[i];
@@ -884,10 +881,7 @@ class _ActivityTab extends StatelessWidget {
                   ),
                 );
               } else {
-                return _TransferListItem(
-                  transfer: item.transfer!,
-                  l10n: l10n,
-                );
+                return _TransferListItem(transfer: item.transfer!, l10n: l10n);
               }
             },
           ),
@@ -901,19 +895,14 @@ class _UnifiedActivity {
   final int timestamp;
   final RewardActivity? reward;
   final TransferActivity? transfer;
-  const _UnifiedActivity({
-    required this.timestamp,
-    this.reward,
-    this.transfer,
-  });
+  const _UnifiedActivity({required this.timestamp, this.reward, this.transfer});
 }
 
 /// List tile for a transfer activity (sent or received).
 class _TransferListItem extends StatelessWidget {
   final TransferActivity transfer;
   final AppLocalizations l10n;
-  const _TransferListItem(
-      {required this.transfer, required this.l10n});
+  const _TransferListItem({required this.transfer, required this.l10n});
 
   @override
   Widget build(BuildContext context) {
@@ -926,8 +915,7 @@ class _TransferListItem extends StatelessWidget {
     final amount = _formatAtomic(transfer.amountAtomic);
 
     return ListTile(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       leading: Container(
         width: 40,
         height: 40,

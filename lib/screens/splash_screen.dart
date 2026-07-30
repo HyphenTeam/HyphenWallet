@@ -118,7 +118,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  l10n?.quantumResistantWallet ?? 'Quantum-Resistant Wallet',
+                  l10n?.quantumResistantWallet ?? 'Hyphen Wallet',
                   style: TextStyle(
                     fontSize: 14,
                     color: cs.onSurfaceVariant,

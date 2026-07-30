@@ -8,7 +8,7 @@ use rust_lib_hyphen_wallet::address::HyphenAddress;
 use rust_lib_hyphen_wallet::api::wallet::get_default_address;
 use rust_lib_hyphen_wallet::transfer::{
     build_transaction, scan_wallet_outputs, submit_built_transaction, transaction_status,
-    BuiltTransaction, TransactionStatus,
+    BuiltTransaction, TransactionRequest, TransactionStatus,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -245,17 +245,17 @@ impl Agent {
                 chain.height,
                 self.config.network.as_str() == "mainnet",
             )?;
-            let built = build_transaction(
-                self.config.node_host.clone(),
-                self.config.node_port,
-                self.seed_hex.to_string(),
-                self.config.account,
-                recipient_address.clone(),
-                amount_atomic,
-                self.config.fee,
-                scan.outputs_json,
-                self.config.ring_size,
-            )?;
+            let built = build_transaction(TransactionRequest {
+                host: self.config.node_host.clone(),
+                port: self.config.node_port,
+                seed_hex: self.seed_hex.to_string(),
+                account: self.config.account,
+                recipient_address: recipient_address.clone(),
+                amount: amount_atomic,
+                fee: self.config.fee,
+                owned_outputs_json: scan.outputs_json,
+                ring_size: self.config.ring_size,
+            })?;
             self.state.records.insert(
                 intent_id.clone(),
                 AgentRecord {

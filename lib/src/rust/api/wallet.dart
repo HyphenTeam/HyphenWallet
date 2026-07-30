@@ -36,13 +36,8 @@ Future<WalletCreateResult> createWalletWithWordCount({
   wordCount: wordCount,
 );
 
-/// Create a wallet with a password that is transformed through a quantum-resistant
-/// algorithm before being used as the BIP39 passphrase.
-///
-/// The password is NOT used directly — it is first passed through WOTS+ hash chains
-/// (67 chains × 15 steps of BLAKE3) to produce a quantum-hardened passphrase.
-/// This ensures the derived seed is secure even against quantum computers running
-/// Grover's algorithm on the BIP39 PBKDF2.
+/// Create a wallet using the historical password-to-passphrase transform.
+/// This compatibility transform does not add entropy to a weak password.
 Future<WalletCreateResult> createWalletWithPassword({
   required String password,
 }) => RustLib.instance.api.crateApiWalletCreateWalletWithPassword(
@@ -53,7 +48,7 @@ Future<WalletCreateResult> createWalletWithPassword({
 ///
 /// `passphrase` is the optional BIP39 passphrase (empty string if not used).
 /// If a password was used during creation, it must be the same password here —
-/// it will be transformed through the same quantum-resistant algorithm.
+/// it will be transformed through the same historical algorithm.
 Future<WalletCreateResult> restoreWallet({
   required String mnemonic,
   required String passphrase,
@@ -62,10 +57,7 @@ Future<WalletCreateResult> restoreWallet({
   passphrase: passphrase,
 );
 
-/// Restore a wallet using the quantum-resistant password transformation.
-///
-/// The password is transformed through WOTS+ hash chains before being used
-/// as the BIP39 passphrase, matching the process used during creation.
+/// Restore a wallet using the historical password-to-passphrase transform.
 Future<WalletCreateResult> restoreWalletWithPassword({
   required String mnemonic,
   required String password,
@@ -74,7 +66,7 @@ Future<WalletCreateResult> restoreWalletWithPassword({
   password: password,
 );
 
-/// Transform a raw password into a quantum-resistant passphrase using WOTS+ hash chains.
+/// Historical deterministic password-to-passphrase transform.
 ///
 /// Process:
 ///   1. Derive a 32-byte seed from the password: BLAKE3("Hyphen_PQ_seed" || password)
@@ -84,9 +76,7 @@ Future<WalletCreateResult> restoreWalletWithPassword({
 ///   5. Hash all 67 chain endpoints together to produce the final 32-byte passphrase
 ///   6. Hex-encode the result for use as BIP39 passphrase
 ///
-/// Security: an adversary with a quantum computer would need to invert 67 × 15 = 1005
-/// sequential BLAKE3 hash invocations per guess, nullifying Grover's quadratic speedup
-/// on the individual hash chain structure.
+/// This is a compatibility transform, not a password KDF.
 Future<String> pqTransformPassword({required String password}) =>
     RustLib.instance.api.crateApiWalletPqTransformPassword(password: password);
 
@@ -137,11 +127,8 @@ Future<String> mnemonicToSeedHex({
   passphrase: passphrase,
 );
 
-/// Sign a message with hybrid quantum-resistant signature.
-///
-/// Uses both Ed25519 and WOTS+ to create a dual signature.
-/// Even if elliptic curves are broken by quantum computers,
-/// the WOTS+ signature remains secure.
+/// Sign a message with the experimental Ed25519 + WOTS encoding.
+/// The WOTS key is not anchored by consensus and one-time use is not enforced.
 Future<SignResult> signMessage({
   required String seedHex,
   required int account,
@@ -156,7 +143,7 @@ Future<SignResult> signMessage({
   message: message,
 );
 
-/// Verify a hybrid signature.
+/// Verify the syntax and equations of an experimental dual signature.
 Future<bool> verifySignature({
   required List<int> message,
   required String ed25519SignatureHex,
@@ -183,10 +170,7 @@ Future<bool> isMainnetAddress({required String address}) =>
 
 /// Encrypt wallet data (mnemonic) with a password.
 ///
-/// Format: [salt:32] [mac:32] [ciphertext:N]
-/// KDF: 100,000 iterations of blake3
-/// Cipher: blake3-XOF stream cipher
-/// MAC: blake3 keyed hash (encrypt-then-MAC)
+/// Uses a versioned Argon2id + XChaCha20-Poly1305 envelope.
 Future<Uint8List> encryptWallet({
   required String mnemonic,
   required String password,

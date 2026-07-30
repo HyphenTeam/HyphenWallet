@@ -1,4 +1,4 @@
-// WOTS+ (Winternitz One-Time Signature Plus) — Post-Quantum Signatures
+// Experimental Winternitz one-time signature implementation.
 //
 // Compatible with the Hyphen chain's pq.rs implementation.
 //
@@ -11,8 +11,8 @@
 // Signature size: 67 × 32 + 32 = 2,176 bytes
 // Public key: 32 bytes (hash of all chain endpoints) + 32 bytes (addr_seed) = 64 bytes
 //
-// Security: hash-based, resistant to quantum computers (Grover's algorithm
-// requires O(2^128) operations for 256-bit hash chains).
+// Security claims require an authenticated public key and strict one-time key
+// use; this module alone supplies neither lifecycle guarantee.
 
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
@@ -215,10 +215,10 @@ impl WotsSignature {
     }
 }
 
-/// Ed25519 + WOTS+ hybrid signature for quantum resistance.
+/// Ed25519 + WOTS dual-signature container.
 ///
-/// Verification requires BOTH signatures to pass. Even if elliptic curves
-/// are broken by quantum computers, the WOTS+ component remains secure.
+/// This type is not a post-quantum identity scheme by itself: the WOTS public
+/// key must be authenticated before use and each WOTS key may sign only once.
 #[derive(Clone, Debug)]
 pub struct HybridSignature {
     pub ed25519_sig: [u8; 64],
@@ -228,7 +228,7 @@ pub struct HybridSignature {
 }
 
 impl HybridSignature {
-    /// Create a hybrid signature over a message.
+    /// Create an experimental dual signature over a message.
     pub fn sign(
         msg: &[u8],
         ed_signing_key: &ed25519_dalek::SigningKey,
