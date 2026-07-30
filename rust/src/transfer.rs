@@ -7,11 +7,10 @@
 
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
+use std::collections::HashSet;
 
 use hyphen_crypto::pedersen::PedersenGens;
-use hyphen_crypto::stealth::{
-    self, EphemeralKey, SpendKey, StealthAddress, ViewKey,
-};
+use hyphen_crypto::stealth::{self, EphemeralKey, SpendKey, StealthAddress, ViewKey};
 use hyphen_tx::builder::{InputSpec, TransactionBuilder};
 use hyphen_tx::note::{Note, OwnedNote};
 use hyphen_tx::transaction::Transaction;
@@ -34,13 +33,37 @@ pub struct WalletOutput {
     pub block_height: u64,
 }
 
-/// Result of a successful transaction submission.
+/// Result of a transaction submission.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SendResult {
     pub tx_hash_hex: String,
     pub accepted: bool,
     pub error_message: String,
     pub spent_indices_csv: String,
     pub vre_used_adaptive: bool,
+}
+
+/// A fully signed transaction that can be persisted before network I/O.
+/// Re-broadcasting these exact bytes is safe: the transaction hash and key
+/// images do not change between retries.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct BuiltTransaction {
+    pub tx_hash_hex: String,
+    pub tx_data: Vec<u8>,
+    pub spent_indices: Vec<u64>,
+    pub vre_used_adaptive: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum TransactionStatus {
+    Unknown,
+    Mempool,
+    Confirmed {
+        block_hash_hex: String,
+        block_height: u64,
+        confirmations: u64,
+    },
 }
 
 /// Summary returned after a wallet scan.
@@ -102,7 +125,9 @@ pub fn scan_wallet_outputs(
 
     let mut client = RpcClient::connect(&host, port)?;
     let mut owned_outputs = Vec::new();
+    let mut spent_key_images = HashSet::new();
     let mut global_index: u64 = 0;
+    let mut scanned_height = start_height.saturating_sub(1);
 
     // Determine starting global_index by scanning from genesis if start_height > 0
     if start_height > 0 {
@@ -124,12 +149,15 @@ pub fn scan_wallet_outputs(
             Ok(b) => b,
             Err(_) => break, // Past chain tip
         };
+        scanned_height = h;
 
         for tx_blob in &block.transactions {
             let tx: Transaction = match bincode::deserialize(tx_blob) {
                 Ok(tx) => tx,
                 Err(_) => continue,
             };
+
+            spent_key_images.extend(tx.inputs.iter().map(|input| input.key_image));
 
             for (out_idx, out) in tx.outputs.iter().enumerate() {
                 let eph = EphemeralKey(out.ephemeral_pubkey);
@@ -198,22 +226,38 @@ pub fn scan_wallet_outputs(
                     continue;
                 }
 
-                owned_outputs.push(WalletOutput {
-                    global_index,
-                    value: amount,
-                    blinding_hex: hex::encode(blinding.to_bytes()),
-                    spend_sk_hex: hex::encode(one_time_sk.to_bytes()),
-                    one_time_pubkey_hex: hex::encode(out.one_time_pubkey),
-                    commitment_hex: hex::encode(out.commitment.as_bytes()),
-                    block_height: h,
-                });
+                let key_image = hyphen_tx::nullifier::compute_nullifier(&one_time_sk, &otp)
+                    .compress()
+                    .to_bytes();
+                owned_outputs.push((
+                    WalletOutput {
+                        global_index,
+                        value: amount,
+                        blinding_hex: hex::encode(blinding.to_bytes()),
+                        spend_sk_hex: hex::encode(one_time_sk.to_bytes()),
+                        one_time_pubkey_hex: hex::encode(out.one_time_pubkey),
+                        commitment_hex: hex::encode(out.commitment.as_bytes()),
+                        block_height: h,
+                    },
+                    key_image,
+                ));
 
                 global_index += 1;
             }
         }
     }
 
-    let total_balance: u64 = owned_outputs.iter().map(|o| o.value).sum();
+    let owned_outputs: Vec<WalletOutput> = owned_outputs
+        .into_iter()
+        .filter_map(|(output, key_image)| {
+            (!spent_key_images.contains(&key_image)).then_some(output)
+        })
+        .collect();
+    let total_balance = owned_outputs.iter().try_fold(0u64, |balance, output| {
+        balance
+            .checked_add(output.value)
+            .ok_or_else(|| "wallet balance overflow".to_string())
+    })?;
     let output_count = owned_outputs.len() as u64;
     let outputs_json =
         serde_json::to_string(&owned_outputs).map_err(|e| format!("serialize outputs: {e}"))?;
@@ -221,7 +265,7 @@ pub fn scan_wallet_outputs(
     Ok(ScanResult {
         total_balance,
         output_count,
-        scanned_height: end_height,
+        scanned_height,
         outputs_json,
     })
 }
@@ -246,6 +290,36 @@ pub fn build_and_send_transaction(
     owned_outputs_json: String,
     ring_size: u32,
 ) -> Result<SendResult, String> {
+    let built = build_transaction(
+        host.clone(),
+        port,
+        seed_hex,
+        account,
+        recipient_address,
+        amount,
+        fee,
+        owned_outputs_json,
+        ring_size,
+    )?;
+    submit_built_transaction(host, port, built)
+}
+
+/// Build and sign a transaction without broadcasting it.
+///
+/// Callers that need crash-safe delivery must persist the returned value
+/// before calling [`submit_built_transaction`].
+#[allow(clippy::too_many_arguments)]
+pub fn build_transaction(
+    host: String,
+    port: u16,
+    seed_hex: String,
+    account: u32,
+    recipient_address: String,
+    amount: u64,
+    fee: u64,
+    owned_outputs_json: String,
+    ring_size: u32,
+) -> Result<BuiltTransaction, String> {
     if amount == 0 {
         return Err("amount must be greater than 0".into());
     }
@@ -258,12 +332,14 @@ pub fn build_and_send_transaction(
         .map_err(|e| format!("parse owned outputs: {e}"))?;
 
     // Select inputs to cover amount + fee
-    let total_needed = amount
-        .checked_add(fee)
-        .ok_or("amount + fee overflow")?;
+    let total_needed = amount.checked_add(fee).ok_or("amount + fee overflow")?;
 
     let selected = select_inputs(&all_outputs, total_needed)?;
-    let total_selected: u64 = selected.iter().map(|o| o.value).sum();
+    let total_selected = selected.iter().try_fold(0u64, |total, output| {
+        total
+            .checked_add(output.value)
+            .ok_or_else(|| "selected input value overflow".to_string())
+    })?;
     let change = total_selected - total_needed;
 
     // Parse recipient address
@@ -336,8 +412,8 @@ pub fn build_and_send_transaction(
         }
         let otp_bytes = hex::decode(&wo.one_time_pubkey_hex)
             .map_err(|e| format!("decode otp for verify: {e}"))?;
-        let cm_bytes = hex::decode(&wo.commitment_hex)
-            .map_err(|e| format!("decode cm for verify: {e}"))?;
+        let cm_bytes =
+            hex::decode(&wo.commitment_hex).map_err(|e| format!("decode cm for verify: {e}"))?;
         if co.one_time_pubkey != otp_bytes || co.commitment != cm_bytes {
             return Err(format!(
                 "output at global_index {} has mismatched data on chain — wallet cache is stale, please re-scan",
@@ -366,6 +442,17 @@ pub fn build_and_send_transaction(
             hex::decode(&wo.one_time_pubkey_hex).map_err(|e| format!("decode otp: {e}"))?;
         let cm_bytes =
             hex::decode(&wo.commitment_hex).map_err(|e| format!("decode commitment: {e}"))?;
+
+        if blinding_bytes.len() != 32
+            || spend_sk_bytes.len() != 32
+            || otp_bytes.len() != 32
+            || cm_bytes.len() != 32
+        {
+            return Err(format!(
+                "wallet output {} contains a non-32-byte cryptographic field",
+                wo.global_index
+            ));
+        }
 
         let mut blinding = [0u8; 32];
         blinding.copy_from_slice(&blinding_bytes);
@@ -411,38 +498,107 @@ pub fn build_and_send_transaction(
         .build()
         .map_err(|e| format!("build transaction: {e}"))?;
 
-    // Serialize and submit
+    // Serialize, but do not perform network I/O. The caller can now persist
+    // these exact signed bytes before the first broadcast attempt.
     let tx_data = tx.serialise();
     let tx_hash_hex = hex::encode(hyphen_crypto::blake3_hash(&tx_data).as_bytes());
-
-    let resp = client.submit_transaction(tx_data)?;
-
-    // Return the spent global_indices so the caller can remove them from cache
     let spent_indices: Vec<u64> = selected.iter().map(|o| o.global_index).collect();
 
+    Ok(BuiltTransaction {
+        tx_hash_hex,
+        tx_data,
+        spent_indices,
+        vre_used_adaptive: vre.used_adaptive,
+    })
+}
+
+/// Broadcast a previously persisted signed transaction.
+pub fn submit_built_transaction(
+    host: String,
+    port: u16,
+    built: BuiltTransaction,
+) -> Result<SendResult, String> {
+    let actual_hash = hex::encode(hyphen_crypto::blake3_hash(&built.tx_data).as_bytes());
+    if actual_hash != built.tx_hash_hex {
+        return Err("persisted transaction hash does not match its signed bytes".into());
+    }
+    let expected_hash = hex::decode(&built.tx_hash_hex)
+        .map_err(|error| format!("persisted transaction hash is invalid hex: {error}"))?;
+    Transaction::deserialise_limited(&built.tx_data)
+        .map_err(|error| format!("persisted transaction is malformed: {error}"))?;
+
+    let mut client = RpcClient::connect(&host, port)?;
+    let resp = client.submit_transaction(built.tx_data)?;
+    if resp.accepted && resp.tx_hash.as_slice() != expected_hash.as_slice() {
+        return Err("node accepted transaction under an unexpected hash".into());
+    }
+
     Ok(SendResult {
-        tx_hash_hex: if resp.accepted {
-            hex::encode(&resp.tx_hash)
-        } else {
-            tx_hash_hex
-        },
+        tx_hash_hex: built.tx_hash_hex,
         accepted: resp.accepted,
         error_message: resp.error,
         spent_indices_csv: if resp.accepted {
-            spent_indices.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+            built
+                .spent_indices
+                .iter()
+                .map(u64::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
         } else {
             String::new()
         },
-        vre_used_adaptive: vre.used_adaptive,
+        vre_used_adaptive: built.vre_used_adaptive,
     })
+}
+
+/// Query canonical-chain or mempool presence for a transaction hash.
+pub fn transaction_status(
+    host: String,
+    port: u16,
+    tx_hash_hex: &str,
+) -> Result<TransactionStatus, String> {
+    let tx_hash = hex::decode(tx_hash_hex)
+        .map_err(|error| format!("invalid transaction hash hex: {error}"))?;
+    if tx_hash.len() != 32 {
+        return Err(format!(
+            "transaction hash must be 32 bytes, got {}",
+            tx_hash.len()
+        ));
+    }
+
+    let mut client = RpcClient::connect(&host, port)?;
+    let location = client.get_tx_location(tx_hash.clone())?;
+    if location.found {
+        if location.block_hash.len() != 32 {
+            return Err("node returned an invalid confirmed block hash".into());
+        }
+        let tip = client.get_chain_info()?.height;
+        if location.block_height > tip {
+            return Err("node returned a transaction height above its chain tip".into());
+        }
+        return Ok(TransactionStatus::Confirmed {
+            block_hash_hex: hex::encode(location.block_hash),
+            block_height: location.block_height,
+            confirmations: tip - location.block_height + 1,
+        });
+    }
+
+    let mempool = client.get_mempool()?;
+    if mempool
+        .tx_hashes
+        .iter()
+        .any(|candidate| candidate.as_slice() == tx_hash.as_slice())
+    {
+        Ok(TransactionStatus::Mempool)
+    } else {
+        Ok(TransactionStatus::Unknown)
+    }
 }
 
 // ─── Internal helpers ───────────────────────────────────────
 
 fn decompress(bytes: &[u8; 32]) -> Option<RistrettoPoint> {
-    CompressedRistretto::from_slice(bytes)
-        .ok()?
-        .decompress()
+    CompressedRistretto::from_slice(bytes).ok()?.decompress()
 }
 
 /// Select inputs to cover the required amount using a simple greedy algorithm.
@@ -611,13 +767,7 @@ fn fetch_decoys(
             selected_indices.iter().map(|&i| candidates[i]).collect();
 
         // Verify all VRE constraints on the final ring
-        if check_ring_vre(
-            real_height,
-            exclude_index,
-            &selected,
-            total_outputs,
-            params,
-        ) {
+        if check_ring_vre(real_height, exclude_index, &selected, total_outputs, params) {
             // Audit decoy distribution for malicious-node detection
             let decoy_idxs: Vec<u64> = selected.iter().map(|s| s.2).collect();
             audit_decoy_distribution(&decoy_idxs, total_outputs)?;
@@ -765,10 +915,7 @@ fn check_ring_vre(
 /// space into 10 equal bands and rejects if more than half the decoys
 /// fall in the same band — a distribution incompatible with honest
 /// random sampling.
-fn audit_decoy_distribution(
-    decoy_indices: &[u64],
-    total_outputs: u64,
-) -> Result<(), String> {
+fn audit_decoy_distribution(decoy_indices: &[u64], total_outputs: u64) -> Result<(), String> {
     if decoy_indices.len() < 3 || total_outputs < 10 {
         return Ok(());
     }

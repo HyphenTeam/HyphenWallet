@@ -5,10 +5,10 @@
 pub mod api;
 mod frb_generated;
 
-mod address;
+pub mod address;
 mod bip39;
 mod crypto;
-mod keys;
-mod rpc_client;
-mod transfer;
+pub mod keys;
+pub mod rpc_client;
+pub mod transfer;
 mod wots;

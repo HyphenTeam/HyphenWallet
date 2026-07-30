@@ -116,7 +116,10 @@ pub fn restore_wallet(mnemonic: String, passphrase: String) -> Result<WalletCrea
 ///
 /// The password is transformed through WOTS+ hash chains before being used
 /// as the BIP39 passphrase, matching the process used during creation.
-pub fn restore_wallet_with_password(mnemonic: String, password: String) -> Result<WalletCreateResult, String> {
+pub fn restore_wallet_with_password(
+    mnemonic: String,
+    password: String,
+) -> Result<WalletCreateResult, String> {
     if !bip39::validate_mnemonic(&mnemonic) {
         return Err("invalid mnemonic phrase".into());
     }
@@ -528,8 +531,15 @@ pub fn scan_wallet_outputs(
     end_height: u64,
     is_mainnet: bool,
 ) -> Result<WalletScanResult, String> {
-    let result =
-        crate::transfer::scan_wallet_outputs(host, port, seed_hex, account, start_height, end_height, is_mainnet)?;
+    let result = crate::transfer::scan_wallet_outputs(
+        host,
+        port,
+        seed_hex,
+        account,
+        start_height,
+        end_height,
+        is_mainnet,
+    )?;
     Ok(WalletScanResult {
         total_balance: result.total_balance,
         output_count: result.output_count,

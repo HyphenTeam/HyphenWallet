@@ -37,6 +37,8 @@ pub struct RpcResponse {
 
 pub const METHOD_GET_CHAIN_INFO: u32 = 3;
 pub const METHOD_SUBMIT_TX: u32 = 4;
+pub const METHOD_GET_MEMPOOL: u32 = 5;
+pub const METHOD_GET_TX_LOCATION: u32 = 6;
 pub const METHOD_GET_BLOCK_BY_HEIGHT: u32 = 2;
 pub const METHOD_GET_RANDOM_OUTPUTS: u32 = 7;
 pub const METHOD_GET_OUTPUT_INFO: u32 = 8;
@@ -108,6 +110,37 @@ pub struct SubmitTransactionResponse {
     pub tx_hash: Vec<u8>,
     #[prost(string, tag = "3")]
     pub error: String,
+}
+
+#[derive(Clone, prost::Message)]
+pub struct GetMempoolRequest {}
+
+#[derive(Clone, prost::Message)]
+pub struct MempoolResponse {
+    #[prost(uint64, tag = "1")]
+    pub tx_count: u64,
+    #[prost(uint64, tag = "2")]
+    pub total_size: u64,
+    #[prost(bytes = "vec", repeated, tag = "3")]
+    pub tx_hashes: Vec<Vec<u8>>,
+}
+
+#[derive(Clone, prost::Message)]
+pub struct GetTxLocationRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub tx_hash: Vec<u8>,
+}
+
+#[derive(Clone, prost::Message)]
+pub struct TxLocationResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub block_hash: Vec<u8>,
+    #[prost(uint32, tag = "2")]
+    pub tx_index: u32,
+    #[prost(bool, tag = "3")]
+    pub found: bool,
+    #[prost(uint64, tag = "4")]
+    pub block_height: u64,
 }
 
 #[derive(Clone, prost::Message)]
@@ -230,6 +263,25 @@ impl RpcClient {
         }
         SubmitTransactionResponse::decode(&resp.payload[..])
             .map_err(|e| format!("decode submit response: {e}"))
+    }
+
+    pub fn get_mempool(&mut self) -> Result<MempoolResponse, String> {
+        let resp = self.call(METHOD_GET_MEMPOOL, GetMempoolRequest {}.encode_to_vec())?;
+        if !resp.success {
+            return Err(format!("get_mempool failed: {}", resp.error));
+        }
+        MempoolResponse::decode(&resp.payload[..])
+            .map_err(|error| format!("decode mempool response: {error}"))
+    }
+
+    pub fn get_tx_location(&mut self, tx_hash: Vec<u8>) -> Result<TxLocationResponse, String> {
+        let request = GetTxLocationRequest { tx_hash };
+        let resp = self.call(METHOD_GET_TX_LOCATION, request.encode_to_vec())?;
+        if !resp.success {
+            return Err(format!("get_tx_location failed: {}", resp.error));
+        }
+        TxLocationResponse::decode(&resp.payload[..])
+            .map_err(|error| format!("decode transaction location: {error}"))
     }
 
     pub fn get_random_outputs(

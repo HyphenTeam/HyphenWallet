@@ -6,7 +6,11 @@ edition = "2021"
 [workspace]
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[[bin]]
+name = "hyphen-payout-agent"
+path = "src/bin/payout_agent.rs"
 
 [dependencies]
 flutter_rust_bridge = "=2.11.1"
