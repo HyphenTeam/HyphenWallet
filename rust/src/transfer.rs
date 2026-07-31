@@ -7,6 +7,7 @@
 
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
+use rand::RngExt;
 use std::collections::HashSet;
 
 use hyphen_crypto::pedersen::PedersenGens;
@@ -137,7 +138,7 @@ pub fn scan_wallet_outputs(
         for h in 0..start_height {
             let block = client.get_block_by_height(h)?;
             for tx_blob in &block.transactions {
-                if let Ok(tx) = bincode::deserialize::<Transaction>(tx_blob) {
+                if let Ok(tx) = Transaction::deserialise_limited(tx_blob) {
                     global_index += tx.outputs.len() as u64;
                 }
             }
@@ -152,7 +153,7 @@ pub fn scan_wallet_outputs(
         scanned_height = h;
 
         for tx_blob in &block.transactions {
-            let tx: Transaction = match bincode::deserialize(tx_blob) {
+            let tx: Transaction = match Transaction::deserialise_limited(tx_blob) {
                 Ok(tx) => tx,
                 Err(_) => continue,
             };
@@ -426,7 +427,7 @@ pub fn build_transaction(request: TransactionRequest) -> Result<BuiltTransaction
             wo.block_height,
             &vre,
         )?;
-        let real_index = rand::Rng::gen_range(&mut rand::thread_rng(), 0..=decoys.len());
+        let real_index = rand::rng().random_range(0..=decoys.len());
 
         let blinding_bytes =
             hex::decode(&wo.blinding_hex).map_err(|e| format!("decode blinding: {e}"))?;
@@ -743,7 +744,7 @@ fn fetch_decoys(
         let mut remaining: Vec<usize> = (0..candidates.len())
             .filter(|i| !used.contains(i))
             .collect();
-        remaining.shuffle(&mut rand::thread_rng());
+        remaining.shuffle(&mut rand::rng());
 
         for ci in remaining {
             if selected_indices.len() >= count {

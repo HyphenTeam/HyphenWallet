@@ -9,6 +9,7 @@
 // Seed derivation: PBKDF2-HMAC-SHA512(mnemonic, "mnemonic" + passphrase, 2048)
 
 use hmac::Hmac;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
@@ -39,7 +40,7 @@ pub fn generate_mnemonic(word_count: usize) -> Result<String, String> {
     let entropy_bytes = entropy_bits / 8;
 
     let mut entropy = vec![0u8; entropy_bytes];
-    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut entropy);
+    rand::rng().fill_bytes(&mut entropy);
 
     let mnemonic = entropy_to_mnemonic(&entropy)?;
     entropy.zeroize();

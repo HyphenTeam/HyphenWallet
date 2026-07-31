@@ -13,29 +13,33 @@ name = "hyphen-payout-agent"
 path = "src/bin/payout_agent.rs"
 
 [dependencies]
-flutter_rust_bridge = "=2.11.1"
+flutter_rust_bridge = "=2.12.0"
 
 # Hyphen blockchain crates
-hyphen-crypto = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "fef7290dcbbeea20e8d231bf2ffcd13982a7046b" }
-hyphen-tx     = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "fef7290dcbbeea20e8d231bf2ffcd13982a7046b" }
-hyphen-proof  = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "fef7290dcbbeea20e8d231bf2ffcd13982a7046b" }
+hyphen-codec = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "3a7effdc74b59bea1792116327e569e1d9bc9e21" }
+hyphen-crypto = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "3a7effdc74b59bea1792116327e569e1d9bc9e21" }
+hyphen-tx = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "3a7effdc74b59bea1792116327e569e1d9bc9e21" }
+hyphen-proof = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "3a7effdc74b59bea1792116327e569e1d9bc9e21" }
 
 # Cryptography
 blake3 = "1.8"
-curve25519-dalek = { version = "4.1", features = ["serde", "digest", "rand_core"] }
-ed25519-dalek = { version = "2.1", features = ["serde", "rand_core"] }
-sha2 = "0.10"
-hmac = "0.12"
-pbkdf2 = { version = "0.12", features = ["simple"] }
+curve25519-dalek = { version = "5.0.0", features = [
+    "serde",
+    "digest",
+    "rand_core",
+] }
+ed25519-dalek = { version = "3.0.0", features = ["serde", "rand_core"] }
+sha2 = "0.11.0"
+hmac = "0.13.0"
+pbkdf2 = { version = "0.13.0", features = ["hmac"] }
 merlin = "3"
 argon2 = "0.5"
-chacha20poly1305 = "0.10"
+chacha20poly1305 = "0.11"
 subtle = "2.6"
 
 # Randomness
-rand = "0.8"
-rand_core = { version = "0.6", features = ["getrandom"] }
-getrandom = { version = "0.2", features = ["js"] }
+rand = "0.10.2"
+getrandom = { version = "0.4.3", features = ["wasm_js"] }
 
 # Encoding
 bs58 = "0.5"
@@ -44,8 +48,7 @@ hex = "0.4"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-bincode = "1"
-prost = "0.13"
+prost = "0.14.4"
 
 # Security
 zeroize = { version = "1", features = ["derive"] }

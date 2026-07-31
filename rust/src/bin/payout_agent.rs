@@ -431,11 +431,13 @@ fn load_state_with_backup(path: &Path) -> Result<AgentState, String> {
 
 fn load_state(path: &Path) -> Result<AgentState, String> {
     let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
-    bincode::deserialize(&bytes).map_err(|error| error.to_string())
+    hyphen_codec::deserialize_with_limit(&bytes, 64 * 1024 * 1024)
+        .map_err(|error| error.to_string())
 }
 
 fn persist_state(path: &Path, state: &AgentState) -> Result<(), String> {
-    let bytes = bincode::serialize(state).map_err(|error| error.to_string())?;
+    let bytes = hyphen_codec::serialize_with_limit(state, 64 * 1024 * 1024)
+        .map_err(|error| error.to_string())?;
     let temporary = sidecar(path, "next");
     let backup = sidecar(path, "bak");
     let mut file = std::fs::OpenOptions::new()

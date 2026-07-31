@@ -1,3 +1,12 @@
+# Hyphen Wallet (Chinese Compatibility Entry)
+
+This compatibility entry preserves the Chinese documentation URL. The complete
+English-first, Chinese-second README is available in [README.md](README.md).
+
+---
+
+<!-- hyphen-bilingual-chinese -->
+
 # Hyphen Wallet
 
 [English](README.md)

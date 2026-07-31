@@ -17,6 +17,7 @@ use crate::bip39;
 use crate::crypto;
 use crate::keys::{MasterKey, COIN_TYPE};
 use crate::wots;
+use rand::Rng;
 
 // --- Data structures exposed to Flutter ---
 
@@ -389,8 +390,8 @@ pub fn encrypt_wallet(mnemonic: String, password: String) -> Result<Vec<u8>, Str
 
     let mut salt = [0u8; WALLET_SALT_LEN];
     let mut nonce = [0u8; WALLET_NONCE_LEN];
-    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut salt);
-    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce);
+    rand::rng().fill_bytes(&mut salt);
+    rand::rng().fill_bytes(&mut nonce);
 
     let mut header = Vec::with_capacity(WALLET_HEADER_LEN);
     header.extend_from_slice(WALLET_MAGIC);
@@ -404,9 +405,10 @@ pub fn encrypt_wallet(mnemonic: String, password: String) -> Result<Vec<u8>, Str
 
     let mut key = derive_argon2id_key(password.as_bytes(), &salt)?;
     let cipher = XChaCha20Poly1305::new((&key).into());
+    let nonce = XNonce::from(nonce);
     let ciphertext = cipher
         .encrypt(
-            XNonce::from_slice(&nonce),
+            &nonce,
             Payload {
                 msg: mnemonic.as_bytes(),
                 aad: &header,
@@ -451,9 +453,10 @@ fn decrypt_current_wallet(encrypted_data: &[u8], password: &[u8]) -> Result<Stri
     let nonce: [u8; WALLET_NONCE_LEN] = encrypted_data[40..64].try_into().unwrap();
     let mut key = derive_argon2id_key(password, &salt)?;
     let cipher = XChaCha20Poly1305::new((&key).into());
+    let nonce = XNonce::from(nonce);
     let plaintext = cipher
         .decrypt(
-            XNonce::from_slice(&nonce),
+            &nonce,
             Payload {
                 msg: &encrypted_data[WALLET_HEADER_LEN..],
                 aad: &encrypted_data[..WALLET_HEADER_LEN],

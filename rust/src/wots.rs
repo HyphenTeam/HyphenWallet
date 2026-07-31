@@ -14,6 +14,7 @@
 // Security claims require an authenticated public key and strict one-time key
 // use; this module alone supplies neither lifecycle guarantee.
 
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
@@ -95,8 +96,8 @@ impl WotsSecretKey {
     pub fn generate() -> Self {
         let mut seed = [0u8; 32];
         let mut addr_seed = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
-        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut addr_seed);
+        rand::rng().fill_bytes(&mut seed);
+        rand::rng().fill_bytes(&mut addr_seed);
         Self { seed, addr_seed }
     }
 
@@ -307,7 +308,7 @@ mod tests {
 
     #[test]
     fn hybrid_sign_verify() {
-        let ed_sk = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let ed_sk = ed25519_dalek::SigningKey::generate(&mut rand::rng());
         let wots_sk = WotsSecretKey::generate();
         let msg = b"hybrid PQ test";
         let sig = HybridSignature::sign(msg, &ed_sk, &wots_sk);
@@ -316,7 +317,7 @@ mod tests {
 
     #[test]
     fn hybrid_wrong_message_fails() {
-        let ed_sk = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let ed_sk = ed25519_dalek::SigningKey::generate(&mut rand::rng());
         let wots_sk = WotsSecretKey::generate();
         let sig = HybridSignature::sign(b"correct", &ed_sk, &wots_sk);
         assert!(sig.verify(b"wrong").is_err());

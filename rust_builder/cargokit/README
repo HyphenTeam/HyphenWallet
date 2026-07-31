@@ -9,3 +9,16 @@ for a tutorial on how to use Cargokit.
 
 Example plugin available at https://github.com/irondash/hello_rust_ffi_plugin.
 
+---
+
+<!-- hyphen-bilingual-chinese -->
+
+/// 此目录复制自 Cargokit（目前的官方集成方式）。
+/// 详情：https://fzyzcjy.github.io/flutter_rust_bridge/manual/integrate/builtin
+
+这是一个实验性仓库，用于为 Flutter plugin 和 package 提供无缝集成 Cargo 构建的胶水层。
+
+教程：https://matejknopp.com/post/flutter_plugin_in_rust_with_no-prebuilt-binaries/
+
+示例 plugin：https://github.com/irondash/hello_rust_ffi_plugin
+
