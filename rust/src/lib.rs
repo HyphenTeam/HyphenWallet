@@ -2,6 +2,18 @@
 // are referenced from Rust itself.
 #![allow(dead_code)]
 
+const DEFAULT_WIRE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_WIRE_COLLECTION_ITEMS: usize = 1_000_000;
+
+fn wire_config(max_bytes: usize) -> rustbinary::Config {
+    rustbinary::legacy_options()
+        .with_little_endian()
+        .with_fixint_encoding()
+        .with_limit(max_bytes as u64)
+        .with_collection_limit(max_bytes.min(MAX_WIRE_COLLECTION_ITEMS) as u64)
+        .reject_trailing_bytes()
+}
+
 pub mod api;
 mod frb_generated;
 
@@ -36,13 +48,22 @@ mod codec_compatibility_tests {
         let expected = vec![
             7, 2, 1, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 4, 1, 9, 0, 0, 0,
         ];
-        assert_eq!(hyphen_codec::serialize(&fixture).unwrap(), expected);
         assert_eq!(
-            hyphen_codec::deserialize::<CodecFixture>(&expected).unwrap(),
+            crate::wire_config(crate::DEFAULT_WIRE_BYTES)
+                .serialize(&fixture)
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            crate::wire_config(crate::DEFAULT_WIRE_BYTES)
+                .deserialize::<CodecFixture>(&expected)
+                .unwrap(),
             fixture
         );
         let mut trailing = expected;
         trailing.push(0);
-        assert!(hyphen_codec::deserialize::<CodecFixture>(&trailing).is_err());
+        assert!(crate::wire_config(crate::DEFAULT_WIRE_BYTES)
+            .deserialize::<CodecFixture>(&trailing)
+            .is_err());
     }
 }

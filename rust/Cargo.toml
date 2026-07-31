@@ -2,6 +2,8 @@
 name = "rust_lib_hyphen_wallet"
 version = "0.1.0"
 edition = "2021"
+authors = ["Hyphen Contributors"]
+license = "PSL-1.0.0"
 
 [workspace]
 
@@ -16,7 +18,7 @@ path = "src/bin/payout_agent.rs"
 flutter_rust_bridge = "=2.12.0"
 
 # Hyphen blockchain crates
-hyphen-codec = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "3a7effdc74b59bea1792116327e569e1d9bc9e21" }
+rustbinary = { version = "0.1.2", features = ["derive"] }
 hyphen-crypto = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "3a7effdc74b59bea1792116327e569e1d9bc9e21" }
 hyphen-tx = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "3a7effdc74b59bea1792116327e569e1d9bc9e21" }
 hyphen-proof = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "3a7effdc74b59bea1792116327e569e1d9bc9e21" }

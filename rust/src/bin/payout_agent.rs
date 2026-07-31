@@ -16,6 +16,16 @@ use zeroize::Zeroizing;
 const PROTOCOL_VERSION: u32 = 1;
 const MAX_REQUEST_BYTES: usize = 64 * 1024;
 const STATE_VERSION: u32 = 1;
+const MAX_WIRE_COLLECTION_ITEMS: usize = 1_000_000;
+
+fn wire_config(max_bytes: usize) -> rustbinary::Config {
+    rustbinary::legacy_options()
+        .with_little_endian()
+        .with_fixint_encoding()
+        .with_limit(max_bytes as u64)
+        .with_collection_limit(max_bytes.min(MAX_WIRE_COLLECTION_ITEMS) as u64)
+        .reject_trailing_bytes()
+}
 
 #[derive(Clone, Debug)]
 struct Config {
@@ -431,12 +441,14 @@ fn load_state_with_backup(path: &Path) -> Result<AgentState, String> {
 
 fn load_state(path: &Path) -> Result<AgentState, String> {
     let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
-    hyphen_codec::deserialize_with_limit(&bytes, 64 * 1024 * 1024)
+    wire_config(64 * 1024 * 1024)
+        .deserialize(&bytes)
         .map_err(|error| error.to_string())
 }
 
 fn persist_state(path: &Path, state: &AgentState) -> Result<(), String> {
-    let bytes = hyphen_codec::serialize_with_limit(state, 64 * 1024 * 1024)
+    let bytes = wire_config(64 * 1024 * 1024)
+        .serialize(state)
         .map_err(|error| error.to_string())?;
     let temporary = sidecar(path, "next");
     let backup = sidecar(path, "bak");

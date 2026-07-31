@@ -103,4 +103,4 @@ Mnemonic、seed 文件、加密钱包、payout token、恢复词截图和生产�
 
 ## 许可证
 
-HyphenWallet 使用 GNU Affero General Public License v3.0，完整条款见 [LICENSE](LICENSE)。
+HyphenWallet 使用 PolyForm Strict License 1.0.0，完整条款见 [LICENSE](LICENSE)。

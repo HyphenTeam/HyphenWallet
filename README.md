@@ -140,13 +140,12 @@ seed or token.
 
 ## Protocol compatibility
 
-`hyphen-codec`, `hyphen-crypto`, `hyphen-tx`, and `hyphen-proof` are pinned to
-the public Hyphen Git revision
-`3a7effdc74b59bea1792116327e569e1d9bc9e21`; the wallet does not use a local
-path dependency. Changing this revision is a protocol upgrade. Canonical
-decoding is bounded and rejects trailing bytes, including during transaction
-scanning; legacy decode fallback must not enter transaction hashes or
-signatures.
+`hyphen-crypto`, `hyphen-tx`, and `hyphen-proof` are pinned to public Hyphen Git
+revision `3a7effdc74b59bea1792116327e569e1d9bc9e21`; the wallet does not use a local
+path dependency. Binary encoding uses RustBinary 0.1.2 with Hyphen's bounded,
+fixed-width, little-endian, trailing-byte-rejecting profile. Changing the chain
+revision or wire profile is a protocol upgrade. Format fallback must not enter
+transaction hashes or signatures.
 
 ## CI and releases
 
@@ -259,10 +258,10 @@ Agent 拒绝非 loopback 监听，常量时间比较 token，检查收款地址�
 
 ## 协议兼容性
 
-`hyphen-codec`、`hyphen-crypto`、`hyphen-tx` 和 `hyphen-proof` 固定到 Hyphen
-公开 Git revision `3a7effdc74b59bea1792116327e569e1d9bc9e21`，Wallet 不使用本地路径依赖。
-改变该 revision 属于协议升级。规范解码具有资源上限并拒绝尾随字节，交易扫描同样
-如此；旧格式回退解码不得进入交易哈希或签名。
+`hyphen-crypto`、`hyphen-tx` 和 `hyphen-proof` 固定到 Hyphen 公开 Git revision
+`3a7effdc74b59bea1792116327e569e1d9bc9e21`，Wallet 不使用本地路径依赖。二进制编码
+使用 RustBinary 0.1.2，并采用与主链相同的有界、固定宽度、小端、拒绝尾随字节配置。
+改变链 revision 或 wire profile 都属于协议升级；格式回退解码不得进入交易哈希或签名。
 
 ## CI 和 Release
 
@@ -272,4 +271,4 @@ Mnemonic、seed 文件、加密钱包、payout token、恢复词截图和生产�
 
 ## 许可证
 
-HyphenWallet 使用 GNU Affero General Public License v3.0，完整条款见 [LICENSE](LICENSE)。
+HyphenWallet 使用 PolyForm Strict License 1.0.0，完整条款见 [LICENSE](LICENSE)。

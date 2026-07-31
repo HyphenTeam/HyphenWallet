@@ -1097,7 +1097,6 @@ dependencies = [
  "getrandom 0.4.3",
  "hex",
  "hmac",
- "hyphen-codec",
  "hyphen-crypto",
  "hyphen-proof",
  "hyphen-tx",
@@ -1106,11 +1105,33 @@ dependencies = [
  "pbkdf2",
  "prost",
  "rand",
+ "rustbinary",
  "serde",
  "serde_json",
  "sha2",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "rustbinary"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b658eb55cca5a717eaa999d09ba641dc079d3213a5f36258ee272e29033135fc"
+dependencies = [
+ "rustbinary-derive",
+ "serde",
+]
+
+[[package]]
+name = "rustbinary-derive"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21d5213a446a0842c329fb2161d81b67f0447f6043b3c8dc294028398d1b1b2c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
 ]
 
 [[package]]
