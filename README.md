@@ -20,6 +20,13 @@ cryptographic, mobile, or supply-chain audit. Use devnet funds only.
   password do not replace an offline mnemonic backup.
 - Chain transactions currently rely on the base chain's Ristretto/CLSAG/range
   proof stack. That stack is not independently audited.
+- Every RPC connection performs a chain-info handshake and pins block version
+  3, PoUW version 1, network magic, consensus parameter hash, and genesis hash.
+  Nodes that omit these fields or expose the legacy hash-target chain are
+  rejected before scanning or transaction submission.
+- The `PoUW version 1` field is a chain-identity value. Wallet does not verify
+  scientific execution itself and does not imply that task-backed useful-work
+  settlement is active; the connected node remains responsible for consensus.
 - The Ed25519 + WOTS message API is experimental. Its WOTS public key is not
   anchored by consensus and the stateless API cannot enforce one-time use. It
   is not evidence that the wallet or chain is post-quantum secure.
@@ -50,6 +57,24 @@ The Rust lockfile pins the exact Hyphen base-chain commit used for crypto,
 transaction, and proof compatibility. Updating that commit is a protocol
 upgrade and must be followed by Rust tests, Flutter analysis, a desktop build,
 and an end-to-end devnet transfer test.
+
+## Chain compatibility
+
+Wallet RPC mirrors the append-only protobuf fields exposed by the node's chain
+status response. The current devnet identity is:
+
+```text
+network=hyphen-devnet-v2
+network_magic=48594456
+consensus_params_hash=54bf97e4e28d4fcf963d884a555a8425bbfe7c84d2753001bcabbaf116232fda
+genesis_hash=47d530160cfef9141fe3b37b886e09b9f96ec4dc93d6c05005b9c6dbf35b1972
+block_version=3
+pouw_protocol_version=1
+```
+
+This pinning prevents accidental cross-chain use. It does not prove that a
+remote node is honest about canonical history; use a trusted node or compare
+independent nodes.
 
 ## Wallet lifecycle
 
@@ -159,7 +184,7 @@ containing recovery words, or production signing state.
 
 ## License
 
-HyphenWallet is licensed under the GNU Affero General Public License v3.0. See
+HyphenWallet is licensed under the PolyForm Strict License 1.0.0. See
 [LICENSE](LICENSE) for the complete terms.
 
 ---

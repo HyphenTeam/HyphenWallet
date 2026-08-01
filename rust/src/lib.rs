@@ -19,6 +19,7 @@ mod frb_generated;
 
 pub mod address;
 mod bip39;
+pub mod chain_identity;
 mod crypto;
 pub mod keys;
 pub mod rpc_client;

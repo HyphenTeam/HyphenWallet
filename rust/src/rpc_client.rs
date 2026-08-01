@@ -74,6 +74,16 @@ pub struct ChainInfoResponse {
     pub network: String,
     #[prost(bytes = "vec", tag = "7")]
     pub epoch_seed: Vec<u8>,
+    #[prost(bytes = "vec", tag = "8")]
+    pub network_magic: Vec<u8>,
+    #[prost(bytes = "vec", tag = "9")]
+    pub consensus_params_hash: Vec<u8>,
+    #[prost(bytes = "vec", tag = "10")]
+    pub genesis_hash: Vec<u8>,
+    #[prost(uint32, tag = "11")]
+    pub block_version: u32,
+    #[prost(uint32, tag = "12")]
+    pub pouw_protocol_version: u32,
 }
 
 #[derive(Clone, prost::Message)]
@@ -194,7 +204,17 @@ impl RpcClient {
         stream
             .set_write_timeout(Some(Duration::from_secs(30)))
             .map_err(|e| format!("set write timeout: {e}"))?;
-        Ok(Self { stream, next_id: 1 })
+        let mut client = Self { stream, next_id: 1 };
+        let chain = client.get_chain_info()?;
+        crate::chain_identity::verify(
+            &chain.network,
+            &chain.network_magic,
+            &chain.consensus_params_hash,
+            &chain.genesis_hash,
+            chain.block_version,
+            chain.pouw_protocol_version,
+        )?;
+        Ok(client)
     }
 
     fn call(&mut self, method: u32, payload: Vec<u8>) -> Result<RpcResponse, String> {
