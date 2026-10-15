@@ -66,11 +66,14 @@ status response. The current devnet identity is:
 ```text
 network=hyphen-devnet-v2
 network_magic=48594456
-consensus_params_hash=54bf97e4e28d4fcf963d884a555a8425bbfe7c84d2753001bcabbaf116232fda
-genesis_hash=47d530160cfef9141fe3b37b886e09b9f96ec4dc93d6c05005b9c6dbf35b1972
-block_version=3
-pouw_protocol_version=1
+consensus_params_hash=521f6cdc47f4424c1ea7b9f4d6770cf114f620cdff62958060f8c6953cb69de8
+genesis_hash=4c24528fa76c896299d5bfa6d7fee28bf39b21c0efd1684d4b8bafa9819bde55
+block_version=5
+pouw_protocol_version=3
 ```
+
+These values mirror `test-vectors/chain-identity-v5.json` of the base chain and are
+pinned in `rust/src/chain_identity.rs`; a unit test fails if the two drift.
 
 This pinning prevents accidental cross-chain use. It does not prove that a
 remote node is honest about canonical history; use a trusted node or compare
