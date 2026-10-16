@@ -57,6 +57,8 @@ flutter run -d windows
 
 Rust 锁文件固定主链密码学、交易和证明依赖的精确提交。更新依赖提交属于协议升级，必须重新执行 Rust 测试、Flutter 分析、桌面构建和端到端 devnet 转账。
 
+`pubspec.lock` 会记录每个包从哪个 host 解析而来，本仓库提交的锁指向规范的 `pub.dev`，CI 也因此把 `PUB_HOSTED_URL` 固定到同一 host。如果你的机器设置了包镜像（`PUB_HOSTED_URL` / `FLUTTER_STORAGE_BASE_URL`），请在本仓库执行 `flutter pub get` 前取消它：镜像解析出的锁无法通过 CI 的 `flutter pub get --enforce-lockfile`。两个 workflow 会直接点名拒绝这种锁，而不是抛出 97 个依赖差异。
+
 ## 钱包流程
 
 创建或恢复钱包后，先离线记录并复核助记词，再接收资产。配置节点 RPC 后从已知高度扫描。重扫会丢弃旧缓存假设，并过滤 key image 已花费的输出。

@@ -186,6 +186,14 @@ a desktop build gate. Successful CI on `main` triggers commit-bound desktop and
 payout-agent builds. Release archives contain build/debug metadata and SHA-256
 files and are published as prereleases because the wallet is not audited.
 
+`pubspec.lock` records the host every package was resolved from, and the
+committed lock targets the canonical `pub.dev`; CI pins `PUB_HOSTED_URL` to that
+host for the same reason. If your machine exports a package mirror
+(`PUB_HOSTED_URL` / `FLUTTER_STORAGE_BASE_URL`), unset it before running
+`flutter pub get` in this repository: a mirror-resolved lock cannot satisfy the
+`flutter pub get --enforce-lockfile` CI runs. Both workflows refuse such a lock
+by name instead of failing with a 97-package diff.
+
 Never upload a mnemonic, seed file, encrypted wallet, payout token, screenshots
 containing recovery words, or production signing state.
 

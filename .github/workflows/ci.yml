@@ -33,6 +33,11 @@ jobs:
   flutter-linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      # `pubspec.lock` records the host each package was resolved from, and the
+      # committed lock targets pub.dev. Pin it explicitly so a runner whose image
+      # exports a mirror cannot re-resolve 97 packages behind our back.
+      PUB_HOSTED_URL: https://pub.dev
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Install desktop build dependencies
@@ -48,6 +53,13 @@ jobs:
         run: |
           git clone --depth 1 --branch 3.44.6 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+      - name: Reject a lock file resolved from a package mirror
+        run: |
+          set -euo pipefail
+          if grep -q 'pub.flutter-io.cn' pubspec.lock; then
+            echo 'pubspec.lock was resolved from a mirror; regenerate it with PUB_HOSTED_URL unset' >&2
+            exit 1
+          fi
       - name: Resolve and analyze Flutter application
         run: |
           flutter config --no-analytics

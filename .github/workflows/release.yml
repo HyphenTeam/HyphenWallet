@@ -27,6 +27,9 @@ jobs:
           - { os: macos-14, platform: macos, artifact: hyphen-wallet-macos-aarch64, agent: hyphen-payout-agent }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    env:
+      # The committed lock targets pub.dev; see ci.yml for why this is pinned.
+      PUB_HOSTED_URL: https://pub.dev
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -51,6 +54,9 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $env:CARGO_PROFILE_RELEASE_DEBUG='1'
+          if (Select-String -Path pubspec.lock -Pattern 'pub.flutter-io.cn' -Quiet) {
+            throw 'pubspec.lock was resolved from a package mirror; regenerate it with PUB_HOSTED_URL unset'
+          }
           flutter config --no-analytics
           flutter pub get --enforce-lockfile
           flutter build ${{ matrix.platform }} --release
