@@ -1118,7 +1118,6 @@ dependencies = [
  "hyphen-proof",
  "hyphen-tx",
  "hyphen-wire",
- "merlin",
  "once_cell",
  "pbkdf2",
  "prost",

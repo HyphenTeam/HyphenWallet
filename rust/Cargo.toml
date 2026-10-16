@@ -35,12 +35,13 @@ ed25519-dalek = { version = "3.0.0", features = ["serde", "rand_core"] }
 sha2 = "0.11"
 hmac = "0.13.0"
 pbkdf2 = { version = "0.13.0", features = ["hmac"] }
-merlin = "3"
 argon2 = "0.6"
 chacha20poly1305 = "0.11"
 subtle = "2.6"
 
-# Randomness
+# Randomness. `getrandom` is not called directly: its `wasm_js` feature is what
+# the generated `flutter_rust_bridge` web bindings need when the Rust half is
+# built for `wasm32`, and Cargo features are additive across the graph.
 rand = "0.10"
 getrandom = { version = "0.4.3", features = ["wasm_js"] }
 
