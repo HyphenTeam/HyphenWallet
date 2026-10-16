@@ -70,14 +70,14 @@ fn msg_base_w(msg_hash: &[u8; 32]) -> Vec<u8> {
 }
 
 /// WOTS+ public key: hash of all chain endpoints + address seed.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, rustbinary::CompactBinary)]
 pub struct WotsPublicKey {
     pub key_hash: [u8; 32],
     pub addr_seed: [u8; 32],
 }
 
 /// WOTS+ secret key: master seed + address seed.
-#[derive(Clone, Serialize, Deserialize, Zeroize)]
+#[derive(Clone, Serialize, Deserialize, Zeroize, rustbinary::CompactBinary)]
 #[zeroize(drop)]
 pub struct WotsSecretKey {
     pub seed: [u8; 32],
@@ -85,7 +85,7 @@ pub struct WotsSecretKey {
 }
 
 /// WOTS+ signature: 67 chain values + address seed.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, rustbinary::CompactBinary)]
 pub struct WotsSignature {
     pub chains: Vec<[u8; 32]>,
     pub addr_seed: [u8; 32],

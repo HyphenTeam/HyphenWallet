@@ -15,13 +15,17 @@ name = "hyphen-payout-agent"
 path = "src/bin/payout_agent.rs"
 
 [dependencies]
-flutter_rust_bridge = "=2.12.0"
+# Must stay identical to the `flutter_rust_bridge` dependency in ../pubspec.yaml:
+# the generated bindings carry an explicit codegen-version handshake and the
+# loader rejects a mismatch with a hard error at first Rust call.
+flutter_rust_bridge = "=2.13.0"
 
 # Hyphen blockchain crates
-rustbinary = { version = "0.1.2", features = ["derive"] }
-hyphen-crypto = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "3a7effdc74b59bea1792116327e569e1d9bc9e21" }
-hyphen-tx = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "3a7effdc74b59bea1792116327e569e1d9bc9e21" }
-hyphen-proof = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "3a7effdc74b59bea1792116327e569e1d9bc9e21" }
+rustbinary = { version = "0.1.8", features = ["derive"] }
+hyphen-crypto = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "576bc67d972d1156fbabb1ddf579104d5ff2ff88" }
+hyphen-tx = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "576bc67d972d1156fbabb1ddf579104d5ff2ff88" }
+hyphen-proof = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "576bc67d972d1156fbabb1ddf579104d5ff2ff88" }
+hyphen-wire = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "576bc67d972d1156fbabb1ddf579104d5ff2ff88" }
 
 # Cryptography
 blake3 = "1.8"

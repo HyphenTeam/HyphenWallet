@@ -1,0 +1,6 @@
+# Pins the toolchain used by `cargo`, `rustfmt` and rust-analyzer for the
+# wallet's Rust half. CarGoKit still builds the Flutter artifacts through
+# `rustup run stable cargo`, so device builds are unaffected by this pin.
+[toolchain]
+channel = "1.97.0"
+components = ["clippy", "rustfmt", "rust-src"]

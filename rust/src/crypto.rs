@@ -3,7 +3,19 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 /// 256-bit hash output used throughout the Hyphen protocol.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Default,
+    rustbinary::CompactBinary,
+)]
 pub struct Hash256(pub [u8; 32]);
 
 impl Hash256 {

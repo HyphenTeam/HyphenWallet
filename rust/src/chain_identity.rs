@@ -4,8 +4,12 @@ pub const BLOCK_VERSION: u32 = 5;
 /// PoUW protocol version. Must equal `hyphen_pow::POUW_PROTOCOL_VERSION`.
 pub const POUW_PROTOCOL_VERSION: u32 = 3;
 
-/// Canonical anchor of the pinned identities: `test-vectors/chain-identity-v5.json`.
-pub const IDENTITY_VECTOR: &str = "chain-identity-v5";
+/// Canonical anchor of the pinned identities: `test-vectors/chain-identity-v6.json`.
+///
+/// The genesis hashes are the identity-v6 values: they moved when the chain
+/// switched from the fixed-width profile to RustBinary's schema-guided compact
+/// profile, because a genesis hash is the hash of the encoded genesis block.
+pub const IDENTITY_VECTOR: &str = "chain-identity-v6";
 
 pub struct ChainIdentity {
     pub network: &'static str,
@@ -19,19 +23,19 @@ pub const CHAIN_IDENTITIES: [ChainIdentity; 3] = [
         network: "hyphen-devnet-v2",
         network_magic: *b"HYDV",
         consensus_params_hash: "521f6cdc47f4424c1ea7b9f4d6770cf114f620cdff62958060f8c6953cb69de8",
-        genesis_hash: "4c24528fa76c896299d5bfa6d7fee28bf39b21c0efd1684d4b8bafa9819bde55",
+        genesis_hash: "5f7c144f0ef27880259b2429e46ef175685da679916fcc6b80c45f457465e32d",
     },
     ChainIdentity {
         network: "hyphen-testnet",
         network_magic: *b"HYTS",
         consensus_params_hash: "dacfd24354a308d149ee8676444d92bc9e48a54b5c6f191272b40b16653dffa9",
-        genesis_hash: "8fc2138c2c1853aaa1f5dedbc22e02ce84d2201047540b121fac33f9ba6d6851",
+        genesis_hash: "944514b7c52d93ce03f0bfac1d436cf1607fab1b78d73010ff59301f913dba42",
     },
     ChainIdentity {
         network: "hyphen-mainnet",
         network_magic: *b"HYPN",
         consensus_params_hash: "d42031b0c51640621ce6c6cb7bc97847db53bd636842c5b2b4f07c2be6a4e15b",
-        genesis_hash: "de7379c44bbbca342af19631206961e321d3f3918bc977232c4662b6397e271e",
+        genesis_hash: "5896c90005ca4e85e19876dac81867920dfa4315744d757ecbf13c16c24669e6",
     },
 ];
 
@@ -72,25 +76,25 @@ mod tests {
             "hyphen-devnet-v2",
             *b"HYDV",
             "521f6cdc47f4424c1ea7b9f4d6770cf114f620cdff62958060f8c6953cb69de8",
-            "4c24528fa76c896299d5bfa6d7fee28bf39b21c0efd1684d4b8bafa9819bde55",
+            "5f7c144f0ef27880259b2429e46ef175685da679916fcc6b80c45f457465e32d",
         ),
         (
             "hyphen-testnet",
             *b"HYTS",
             "dacfd24354a308d149ee8676444d92bc9e48a54b5c6f191272b40b16653dffa9",
-            "8fc2138c2c1853aaa1f5dedbc22e02ce84d2201047540b121fac33f9ba6d6851",
+            "944514b7c52d93ce03f0bfac1d436cf1607fab1b78d73010ff59301f913dba42",
         ),
         (
             "hyphen-mainnet",
             *b"HYPN",
             "d42031b0c51640621ce6c6cb7bc97847db53bd636842c5b2b4f07c2be6a4e15b",
-            "de7379c44bbbca342af19631206961e321d3f3918bc977232c4662b6397e271e",
+            "5896c90005ca4e85e19876dac81867920dfa4315744d757ecbf13c16c24669e6",
         ),
     ];
 
     #[test]
     fn pinned_identities_match_the_canonical_vector() {
-        assert_eq!(IDENTITY_VECTOR, "chain-identity-v5");
+        assert_eq!(IDENTITY_VECTOR, "chain-identity-v6");
         for (identity, (network, magic, params, genesis)) in CHAIN_IDENTITIES.iter().zip(VECTOR) {
             assert_eq!(identity.network, network);
             assert_eq!(identity.network_magic, magic);
@@ -136,7 +140,8 @@ mod tests {
             chain.network,
             &chain.network_magic,
             &params,
-            &hex::decode("47d530160cfef9141fe3b37b886e09b9f96ec4dc93d6c05005b9c6dbf35b1972").unwrap(),
+            &hex::decode("47d530160cfef9141fe3b37b886e09b9f96ec4dc93d6c05005b9c6dbf35b1972")
+                .unwrap(),
             BLOCK_VERSION,
             POUW_PROTOCOL_VERSION,
         )

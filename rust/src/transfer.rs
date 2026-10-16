@@ -23,7 +23,7 @@ use crate::rpc_client::RpcClient;
 // ─── Public types exposed to FFI ────────────────────────────
 
 /// A wallet-owned unspent output serialisable across FFI.
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize, rustbinary::CompactBinary)]
 pub struct WalletOutput {
     pub global_index: u64,
     pub value: u64,
@@ -35,7 +35,7 @@ pub struct WalletOutput {
 }
 
 /// Result of a transaction submission.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, rustbinary::CompactBinary)]
 pub struct SendResult {
     pub tx_hash_hex: String,
     pub accepted: bool,
@@ -47,7 +47,7 @@ pub struct SendResult {
 /// A fully signed transaction that can be persisted before network I/O.
 /// Re-broadcasting these exact bytes is safe: the transaction hash and key
 /// images do not change between retries.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, rustbinary::CompactBinary)]
 pub struct BuiltTransaction {
     pub tx_hash_hex: String,
     pub tx_data: Vec<u8>,
@@ -55,7 +55,9 @@ pub struct BuiltTransaction {
     pub vre_used_adaptive: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, rustbinary::CompactBinary,
+)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum TransactionStatus {
     Unknown,

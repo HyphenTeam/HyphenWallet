@@ -13,6 +13,13 @@ analyzer:
   exclude:
     # Cargokit is a nested Dart package with its own pubspec and analysis scope.
     - rust_builder/cargokit/build_tool/**
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   # The lint rules applied to this project can be customized in the
