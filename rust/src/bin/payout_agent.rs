@@ -1,9 +1,16 @@
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io::Write;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use courierust::courierust_body::Body;
+use courierust::courierust_http::header::HeaderMap;
+use courierust::courierust_http::request::Request;
+use courierust::courierust_http::response::Response;
+use courierust::courierust_http::{Method, StatusCode};
+use courierust::courierust_server::{Server, ServerConfig};
 use rust_lib_hyphen_wallet::address::HyphenAddress;
 use rust_lib_hyphen_wallet::api::wallet::get_default_address;
 use rust_lib_hyphen_wallet::transfer::{
@@ -13,10 +20,19 @@ use rust_lib_hyphen_wallet::transfer::{
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-const PROTOCOL_VERSION: u32 = 1;
+const PROTOCOL_VERSION: u32 = 2;
 const MAX_REQUEST_BYTES: usize = 64 * 1024;
+const MAX_HEADER_LIST: usize = 16 * 1024;
+const READER_TIMEOUT: Duration = Duration::from_secs(30);
+const REQUEST_HEAD_TIMEOUT: Duration = Duration::from_secs(10);
+const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_CONNECTIONS: usize = 64;
 const STATE_VERSION: u32 = 1;
 const MAX_WIRE_COLLECTION_ITEMS: usize = 1_000_000;
+
+const HEALTH_PATH: &str = "/v1/health";
+const SUBMIT_PATH: &str = "/v1/submit";
+const STATUS_PATH: &str = "/v1/status";
 
 fn wire_config(max_bytes: usize) -> rustbinary::CompactConfig {
     rustbinary::options()
@@ -40,26 +56,27 @@ struct Config {
     fee: u64,
 }
 
+/// A payout request, decoded per route.
+///
+/// The method used to be a field inside the envelope; now it is the path, which
+/// is what lets a status code carry the outcome instead of a JSON flag.
 #[derive(Debug, Deserialize)]
-struct AgentRequest {
+struct HealthRequest {
     version: u32,
-    token: String,
-    #[serde(flatten)]
-    method: AgentMethod,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "method", rename_all = "snake_case")]
-enum AgentMethod {
-    Health,
-    Submit {
-        intent_id: String,
-        recipient_address: String,
-        amount_atomic: u64,
-    },
-    Status {
-        intent_id: String,
-    },
+struct SubmitRequest {
+    version: u32,
+    intent_id: String,
+    recipient_address: String,
+    amount_atomic: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct StatusRequest {
+    version: u32,
+    intent_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -160,48 +177,39 @@ impl Agent {
         })
     }
 
-    fn serve(mut self) -> Result<(), String> {
-        let listener = TcpListener::bind(self.config.bind)
-            .map_err(|error| format!("bind payout agent: {error}"))?;
-        eprintln!(
-            "hyphen-payout-agent listening on {} for wallet {}",
-            self.config.bind, self.wallet_address
-        );
-        for incoming in listener.incoming() {
-            match incoming {
-                Ok(mut stream) => {
-                    let response = match read_request(&mut stream) {
-                        Ok(request) => self.handle(request),
-                        Err(error) => AgentResponse::error(error),
-                    };
-                    if let Err(error) = write_response(&mut stream, &response) {
-                        eprintln!("payout response write failed: {error}");
-                    }
-                }
-                Err(error) => eprintln!("payout connection failed: {error}"),
-            }
-        }
-        Ok(())
-    }
-
-    fn handle(&mut self, request: AgentRequest) -> AgentResponse {
-        if request.version != PROTOCOL_VERSION {
-            return AgentResponse::error("unsupported payout-agent protocol version");
-        }
-        if !constant_time_eq(request.token.as_bytes(), self.token.as_bytes()) {
-            return AgentResponse::error("authentication failed");
-        }
-
-        let result = match request.method {
-            AgentMethod::Health => self.health(),
-            AgentMethod::Submit {
-                intent_id,
-                recipient_address,
-                amount_atomic,
-            } => self.submit(intent_id, recipient_address, amount_atomic),
-            AgentMethod::Status { intent_id } => self.status(intent_id),
+    /// Serves the pool link until the process is stopped.
+    ///
+    /// Courierust's server owns the accept loop and its workers; one mutex
+    /// serialises the agent itself, which is what keeps "reserve then sign then
+    /// submit" single-file: two concurrent requests must never both decide the
+    /// same payout is unpaid.
+    fn serve(self) -> Result<(), String> {
+        let bind = self.config.bind;
+        let wallet_address = self.wallet_address.clone();
+        let config = ServerConfig {
+            http2: false,
+            max_body: MAX_REQUEST_BYTES,
+            max_header_list: MAX_HEADER_LIST,
+            request_header_timeout: Some(REQUEST_HEAD_TIMEOUT),
+            read_timeout: Some(READER_TIMEOUT),
+            idle_timeout: Some(IDLE_TIMEOUT),
+            max_connections: MAX_CONNECTIONS,
+            threads: 2,
+            ..ServerConfig::default()
         };
-        result.unwrap_or_else(AgentResponse::error)
+        let server = Server::bind_with_config(bind, config)
+            .map_err(|error| format!("bind payout agent: {error}"))?;
+        let local_addr = server
+            .local_addr()
+            .map_err(|error| format!("payout agent address: {error}"))?;
+        eprintln!(
+            "hyphen-payout-agent listening on http://{local_addr} for wallet {wallet_address}"
+        );
+
+        let agent = Arc::new(Mutex::new(self));
+        server
+            .serve(move |request: Request<Body>| AgentService::respond(&agent, request))
+            .map_err(|error| format!("serve payout agent: {error}"))
     }
 
     fn health(&mut self) -> Result<AgentResponse, String> {
@@ -365,30 +373,181 @@ impl Agent {
     }
 }
 
-fn read_request(stream: &mut TcpStream) -> Result<AgentRequest, String> {
-    stream
-        .set_read_timeout(Some(Duration::from_secs(10)))
-        .map_err(|error| format!("set request timeout: {error}"))?;
-    let mut bytes = Vec::new();
-    stream
-        .take((MAX_REQUEST_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|error| format!("read payout request: {error}"))?;
-    if bytes.len() > MAX_REQUEST_BYTES {
-        return Err("payout request exceeds 64 KiB".into());
-    }
-    serde_json::from_slice(&bytes).map_err(|error| format!("decode payout request: {error}"))
+/// The routes the pool link exposes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Route {
+    Health,
+    Submit,
+    Status,
 }
 
-fn write_response(stream: &mut TcpStream, response: &AgentResponse) -> Result<(), String> {
-    let bytes =
-        serde_json::to_vec(response).map_err(|error| format!("encode payout response: {error}"))?;
-    stream
-        .write_all(&bytes)
-        .map_err(|error| format!("write payout response: {error}"))?;
-    stream
-        .flush()
-        .map_err(|error| format!("flush payout response: {error}"))
+impl Route {
+    fn of(path: &str) -> Option<Self> {
+        match path {
+            HEALTH_PATH => Some(Route::Health),
+            SUBMIT_PATH => Some(Route::Submit),
+            STATUS_PATH => Some(Route::Status),
+            _ => None,
+        }
+    }
+}
+
+/// Why a payout request was refused before the agent looked at it.
+struct Rejection {
+    status: StatusCode,
+    message: String,
+}
+
+impl Rejection {
+    fn bad_request(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+
+    /// The agent reached a decision and refused. The status stays `200`: the
+    /// exchange itself worked, and the reason is in the body where the pool
+    /// reads it.
+    fn from_agent(message: String) -> Self {
+        Self {
+            status: StatusCode::OK,
+            message,
+        }
+    }
+}
+
+/// Serves one request against the single agent behind the mutex.
+///
+/// Status codes are used where they say something the body cannot — the route
+/// is unknown, the method is not `POST`, the token is wrong, the payload is not
+/// JSON of this version. Everything the agent itself decides comes back as
+/// `200` with `ok` and `error` in the body, so a pool that was upgraded
+/// independently still reads the reason rather than only a code.
+struct AgentService;
+
+impl AgentService {
+    fn respond(agent: &Arc<Mutex<Agent>>, request: Request<Body>) -> Response<Body> {
+        if request.method != Method::POST {
+            let mut response = write_json(
+                StatusCode::METHOD_NOT_ALLOWED,
+                &AgentResponse::error("payout requests are POST"),
+            );
+            response.headers.insert("allow".into(), "POST".into());
+            return response;
+        }
+        let Some(route) = Route::of(request.uri.path()) else {
+            return write_json(
+                StatusCode::NOT_FOUND,
+                &AgentResponse::error("no such payout endpoint"),
+            );
+        };
+
+        // Authorization is checked before the body is read: an unauthenticated
+        // peer gets no work out of this process, not even JSON parsing.
+        let Some(token) = bearer_token(&request.headers) else {
+            return write_json(
+                StatusCode::UNAUTHORIZED,
+                &AgentResponse::error("authentication failed"),
+            );
+        };
+        let body = match request.body.collect() {
+            Ok(body) => body,
+            Err(error) => {
+                return write_json(
+                    StatusCode::BAD_REQUEST,
+                    &AgentResponse::error(format!("read payout request: {error}")),
+                )
+            }
+        };
+
+        let outcome = {
+            // One lock per request, held across the whole exchange: a payout is
+            // reserved, signed and submitted as one step, so two requests must
+            // never interleave inside it.
+            let mut agent = agent.lock().unwrap_or_else(PoisonError::into_inner);
+            if !constant_time_eq(token.as_bytes(), agent.token.as_bytes()) {
+                return write_json(
+                    StatusCode::UNAUTHORIZED,
+                    &AgentResponse::error("authentication failed"),
+                );
+            }
+
+            match route {
+                Route::Health => decode::<HealthRequest>(&body)
+                    .and_then(|request| check_version(request.version))
+                    .and_then(|()| agent.health().map_err(Rejection::from_agent)),
+                Route::Submit => decode::<SubmitRequest>(&body)
+                    .and_then(|request| check_version(request.version).map(|()| request))
+                    .and_then(|request| {
+                        agent
+                            .submit(
+                                request.intent_id,
+                                request.recipient_address,
+                                request.amount_atomic,
+                            )
+                            .map_err(Rejection::from_agent)
+                    }),
+                Route::Status => decode::<StatusRequest>(&body)
+                    .and_then(|request| check_version(request.version).map(|()| request))
+                    .and_then(|request| {
+                        agent
+                            .status(request.intent_id)
+                            .map_err(Rejection::from_agent)
+                    }),
+            }
+        };
+
+        match outcome {
+            Ok(response) => write_json(StatusCode::OK, &response),
+            Err(rejection) => {
+                write_json(rejection.status, &AgentResponse::error(rejection.message))
+            }
+        }
+    }
+}
+
+/// The token from an `authorization: Bearer …` field.
+///
+/// The scheme is compared case-insensitively, as RFC 9110 §11.1 requires; the
+/// token is compared byte for byte elsewhere, in constant time.
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    let value = headers.get("authorization")?.to_str().ok()?;
+    let (scheme, token) = value.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("bearer") || token.is_empty() {
+        return None;
+    }
+    Some(token)
+}
+
+fn decode<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, Rejection> {
+    serde_json::from_slice(body)
+        .map_err(|error| Rejection::bad_request(format!("malformed payout request: {error}")))
+}
+
+fn check_version(version: u32) -> Result<(), Rejection> {
+    if version != PROTOCOL_VERSION {
+        return Err(Rejection::bad_request(format!(
+            "payout protocol version {version} is not supported; this agent speaks {PROTOCOL_VERSION}"
+        )));
+    }
+    Ok(())
+}
+
+fn write_json(status: StatusCode, payload: &AgentResponse) -> Response<Body> {
+    match serde_json::to_vec(payload) {
+        Ok(bytes) => Response::<Body>::with_status(status)
+            .header("content-type", "application/json")
+            .header("cache-control", "no-store")
+            .with_body(Body::from(bytes)),
+        // `AgentResponse` is plain owned data, so this arm is unreachable unless
+        // the type grows something fallible. An empty body is still a truthful
+        // answer; a second failure is not worth inventing.
+        Err(error) => {
+            eprintln!("payout response encoding failed: {error}");
+            Response::<Body>::with_status(StatusCode::INTERNAL_SERVER_ERROR).with_body(Body::Empty)
+        }
+    }
 }
 
 fn load_seed(path: &Path) -> Result<String, String> {
@@ -569,6 +728,45 @@ fn main() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use courierust::courierust_http::header::{HeaderName, HeaderValue};
+
+    #[test]
+    fn routes_come_from_the_path_and_only_the_three_are_served() {
+        assert_eq!(Route::of(HEALTH_PATH), Some(Route::Health));
+        assert_eq!(Route::of(SUBMIT_PATH), Some(Route::Submit));
+        assert_eq!(Route::of(STATUS_PATH), Some(Route::Status));
+        assert_eq!(Route::of("/v1/pay"), None);
+        assert_eq!(Route::of("/healthz"), None);
+        assert_eq!(Route::of(""), None);
+    }
+
+    #[test]
+    fn the_bearer_scheme_is_matched_case_insensitively() {
+        let with = |value: &'static str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                HeaderName::from_lowercase("authorization"),
+                HeaderValue::from_static(value),
+            );
+            headers
+        };
+
+        assert_eq!(bearer_token(&with("Bearer abc")), Some("abc"));
+        assert_eq!(bearer_token(&with("bearer abc")), Some("abc"));
+        assert_eq!(bearer_token(&with("BEARER abc")), Some("abc"));
+        assert_eq!(bearer_token(&with("Basic abc")), None);
+        assert_eq!(bearer_token(&with("Bearer")), None);
+        assert_eq!(bearer_token(&with("Bearer ")), None);
+        assert_eq!(bearer_token(&HeaderMap::new()), None);
+    }
+
+    #[test]
+    fn version_mismatch_is_a_bad_request_that_names_both_versions() {
+        assert!(check_version(PROTOCOL_VERSION).is_ok());
+        let rejection = check_version(PROTOCOL_VERSION - 1).unwrap_err();
+        assert_eq!(rejection.status, StatusCode::BAD_REQUEST);
+        assert!(rejection.message.contains(&PROTOCOL_VERSION.to_string()));
+    }
 
     #[test]
     fn token_comparison_checks_length_and_content() {

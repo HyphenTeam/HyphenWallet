@@ -154,11 +154,14 @@ a 32-256 character secret in `--token-file`:
   --fee 1000
 ```
 
-The listener refuses non-loopback addresses. It checks the token in constant
-time, validates network-correct recipients, persists `intent_id -> signed
-transaction`, permits only one unconfirmed transaction to avoid overlapping
-input selection, rebroadcasts after crashes, and reports confirmation status.
-It never decides miner balances; Pool accounting does that independently.
+The listener refuses non-loopback addresses and serves the pool link as HTTP
+(`Courierust`, the same implementation the pool speaks to it): `/v1/health`,
+`/v1/submit`, `/v1/status`, with the shared token in an `authorization: Bearer`
+header, compared in constant time. It validates network-correct recipients,
+persists `intent_id -> signed transaction`, permits only one unconfirmed
+transaction to avoid overlapping input selection, rebroadcasts after crashes,
+and reports confirmation status. It never decides miner balances; Pool
+accounting does that independently.
 
 The idempotency property is narrow: for a fixed intent `i`, every successful
 retry returns the same transaction hash `h_i`. If a caller tries to bind `i` to
@@ -168,10 +171,11 @@ seed or token.
 
 ## Protocol compatibility
 
-`hyphen-crypto`, `hyphen-tx`, and `hyphen-proof` are pinned to public Hyphen Git
-revision `3a7effdc74b59bea1792116327e569e1d9bc9e21`; the wallet does not use a local
-path dependency. Binary encoding uses RustBinary 0.1.2 with Hyphen's bounded,
-fixed-width, little-endian, trailing-byte-rejecting profile. Changing the chain
+`hyphen-crypto`, `hyphen-tx`, `hyphen-proof`, and `hyphen-wire` are pinned to
+public Hyphen Git revision `576bc67d972d1156fbabb1ddf579104d5ff2ff88` (chain
+identity v6); the wallet does not use a local path dependency. Binary encoding
+uses RustBinary 0.1.8 with Hyphen's bounded, compact, trailing-byte-rejecting
+profile — the same profile the chain hashes and signs over. Changing the chain
 revision or wire profile is a protocol upgrade. Format fallback must not enter
 transaction hashes or signatures.
 
@@ -286,10 +290,11 @@ Agent 拒绝非 loopback 监听，常量时间比较 token，检查收款地址�
 
 ## 协议兼容性
 
-`hyphen-crypto`、`hyphen-tx` 和 `hyphen-proof` 固定到 Hyphen 公开 Git revision
-`3a7effdc74b59bea1792116327e569e1d9bc9e21`，Wallet 不使用本地路径依赖。二进制编码
-使用 RustBinary 0.1.2，并采用与主链相同的有界、固定宽度、小端、拒绝尾随字节配置。
-改变链 revision 或 wire profile 都属于协议升级；格式回退解码不得进入交易哈希或签名。
+`hyphen-crypto`、`hyphen-tx`、`hyphen-proof` 和 `hyphen-wire` 固定到 Hyphen 公开 Git
+revision `576bc67d972d1156fbabb1ddf579104d5ff2ff88`（chain identity v6），Wallet 不使用本地
+路径依赖。二进制编码使用 RustBinary 0.1.8，并采用与主链相同的 compact、有界、拒绝尾随
+字节配置——主链哈希与签名所用的正是这一配置。改变链 revision 或 wire profile 都属于协议
+升级；格式回退解码不得进入交易哈希或签名。
 
 ## CI 和 Release
 
