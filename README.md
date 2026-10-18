@@ -67,12 +67,12 @@ status response. The current devnet identity is:
 network=hyphen-devnet-v2
 network_magic=48594456
 consensus_params_hash=521f6cdc47f4424c1ea7b9f4d6770cf114f620cdff62958060f8c6953cb69de8
-genesis_hash=4c24528fa76c896299d5bfa6d7fee28bf39b21c0efd1684d4b8bafa9819bde55
+genesis_hash=5f7c144f0ef27880259b2429e46ef175685da679916fcc6b80c45f457465e32d
 block_version=5
 pouw_protocol_version=3
 ```
 
-These values mirror `test-vectors/chain-identity-v5.json` of the base chain and are
+These values mirror `test-vectors/chain-identity-v6.json` of the base chain and are
 pinned in `rust/src/chain_identity.rs`; a unit test fails if the two drift.
 
 This pinning prevents accidental cross-chain use. It does not prove that a

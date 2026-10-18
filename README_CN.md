@@ -34,12 +34,12 @@ Hyphen Wallet 是 Hyphen 主链的独立 Flutter 钱包。Flutter 负责界面�
 network=hyphen-devnet-v2
 network_magic=48594456
 consensus_params_hash=521f6cdc47f4424c1ea7b9f4d6770cf114f620cdff62958060f8c6953cb69de8
-genesis_hash=4c24528fa76c896299d5bfa6d7fee28bf39b21c0efd1684d4b8bafa9819bde55
+genesis_hash=5f7c144f0ef27880259b2429e46ef175685da679916fcc6b80c45f457465e32d
 block_version=5
 pouw_protocol_version=3
 ```
 
-上述取值来自主链的 test-vectors/chain-identity-v5.json，并钉在 rust/src/chain_identity.rs，二者一旦漂移会有单元测试失败。
+上述取值来自主链的 test-vectors/chain-identity-v6.json，并钉在 rust/src/chain_identity.rs，二者一旦漂移会有单元测试失败。
 
 身份钉扎可防止误连另一条链，但不能证明远程节点诚实地报告规范历史。生产使用应连接可信节点或对比多个独立节点。
 

@@ -337,7 +337,9 @@ pub fn build_transaction(request: TransactionRequest) -> Result<BuiltTransaction
             .checked_add(output.value)
             .ok_or_else(|| "selected input value overflow".to_string())
     })?;
-    let change = total_selected - total_needed;
+    let change = total_selected
+        .checked_sub(total_needed)
+        .ok_or_else(|| "input selection returned an insufficient set".to_string())?;
 
     // Parse recipient address
     let dest_addr = HyphenAddress::decode(&recipient_address)?;
@@ -615,7 +617,9 @@ fn select_inputs(outputs: &[WalletOutput], total_needed: u64) -> Result<Vec<Wall
         if accumulated >= total_needed {
             break;
         }
-        accumulated += out.value;
+        accumulated = accumulated
+            .checked_add(out.value)
+            .ok_or_else(|| "wallet output value total overflowed u64".to_string())?;
         selected.push(out.clone());
     }
 
