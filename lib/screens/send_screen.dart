@@ -206,7 +206,7 @@ class _SendScreenState extends State<SendScreen> {
               ),
             ),
             Text(
-              '$amountHyp HYP',
+              '$amountHyp HPN',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
@@ -217,7 +217,7 @@ class _SendScreenState extends State<SendScreen> {
                 color: Theme.of(ctx).colorScheme.onSurfaceVariant,
               ),
             ),
-            Text('$feeHyp HYP', style: const TextStyle(fontSize: 14)),
+            Text('$feeHyp HPN', style: const TextStyle(fontSize: 14)),
           ],
         ),
         actions: [
@@ -239,7 +239,7 @@ class _SendScreenState extends State<SendScreen> {
     if (walletService.isBiometricPlatform && walletService.biometricEnabled) {
       // Mobile with biometric enabled → use biometric auth
       final authed = await walletService.authenticateWithBiometrics(
-        reason: 'Authorize transaction of $amountHyp HYP',
+        reason: 'Authorize transaction of $amountHyp HPN',
       );
       if (!authed) {
         if (!mounted) return;
@@ -269,9 +269,9 @@ class _SendScreenState extends State<SendScreen> {
         return;
       }
 
-      // Parse amount (HYP to atomic units: 1 HYP = 1e12 atomic)
+      // Parse amount (HPN to atomic units: 1 HPN = 1e12 atomic)
       final amountAtomic = BigInt.from(amountHyp * 1e12);
-      final feeAtomic = BigInt.from(1e8); // 0.0001 HYP
+      final feeAtomic = BigInt.from(1e8); // 0.0001 HPN
 
       // Check balance
       final balance = await walletService.getSpendableBalance();
@@ -440,7 +440,7 @@ class _SendScreenState extends State<SendScreen> {
                 decoration: InputDecoration(
                   labelText: l10n.amount,
                   prefixIcon: const Icon(Icons.toll_outlined, size: 20),
-                  suffixText: 'HYP',
+                  suffixText: 'HPN',
                 ),
               ),
               const SizedBox(height: 24),
@@ -453,7 +453,7 @@ class _SendScreenState extends State<SendScreen> {
                 ),
                 child: Column(
                   children: [
-                    _infoRow(l10n.networkFee, '0.0001 HYP'),
+                    _infoRow(l10n.networkFee, '0.0001 HPN'),
                     const SizedBox(height: 12),
                     _infoRow(l10n.privacyLevel, l10n.ringSignatureClsag),
                     const SizedBox(height: 12),

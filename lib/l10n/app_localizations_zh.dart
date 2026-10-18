@@ -225,7 +225,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get addressCopiedToClipboard => '地址已复制到剪贴板';
 
   @override
-  String get receiveInfo => '分享此地址以接收 HYP。此地址使用隐身密钥增强隐私。';
+  String get receiveInfo => '分享此地址以接收 HPN。此地址使用隐身密钥增强隐私。';
 
   @override
   String get sendTitle => '发送';
@@ -261,14 +261,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get invalidRecipientAddress => '无效的收款地址';
 
   @override
-  String get sendHyp => '发送 HYP';
+  String get sendHyp => '发送 HPN';
 
   @override
   String get transactionLayer => '交易层';
 
   @override
   String get transactionLayerMessage =>
-      '签名后端已就绪。交易广播需要通过 RPC 接口连接到 Hyphen 节点。\n\n请先通过矿池挖矿赚取 HYP，RPC 同步层集成后即可进行交易。';
+      '签名后端已就绪。交易广播需要通过 RPC 接口连接到 Hyphen 节点。\n\n请先通过矿池挖矿赚取 HPN，RPC 同步层集成后即可进行交易。';
 
   @override
   String get ok => '确定';

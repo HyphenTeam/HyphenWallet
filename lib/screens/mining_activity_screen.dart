@@ -445,7 +445,7 @@ String _formatAtomicAmount(String atomicString) {
   final divisor = BigInt.from(10).pow(decimals);
   final whole = atomic ~/ divisor;
   final fraction = (atomic % divisor).toString().padLeft(decimals, '0');
-  return '$whole.$fraction HYP';
+  return '$whole.$fraction HPN';
 }
 
 String _shortHash(String value) {

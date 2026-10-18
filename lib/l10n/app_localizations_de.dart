@@ -234,7 +234,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get receiveInfo =>
-      'Teilen Sie diese Adresse, um HYP zu empfangen. Diese Adresse verwendet Stealth-Schlüssel für verbesserten Datenschutz.';
+      'Teilen Sie diese Adresse, um HPN zu empfangen. Diese Adresse verwendet Stealth-Schlüssel für verbesserten Datenschutz.';
 
   @override
   String get sendTitle => 'Senden';
@@ -270,14 +270,14 @@ class AppLocalizationsDe extends AppLocalizations {
   String get invalidRecipientAddress => 'Ungültige Empfängeradresse';
 
   @override
-  String get sendHyp => 'HYP senden';
+  String get sendHyp => 'HPN senden';
 
   @override
   String get transactionLayer => 'Transaktionsschicht';
 
   @override
   String get transactionLayerMessage =>
-      'Das Signatur-Backend ist bereit. Transaktionsübertragung erfordert die Verbindung der Wallet mit einem Hyphen-Knoten über die RPC-Schnittstelle.\n\nVerdienen Sie zuerst HYP durch Pool-Mining, dann sind Transaktionen verfügbar, sobald die RPC-Synchronisierungsschicht integriert ist.';
+      'Das Signatur-Backend ist bereit. Transaktionsübertragung erfordert die Verbindung der Wallet mit einem Hyphen-Knoten über die RPC-Schnittstelle.\n\nVerdienen Sie zuerst HPN durch Pool-Mining, dann sind Transaktionen verfügbar, sobald die RPC-Synchronisierungsschicht integriert ist.';
 
   @override
   String get ok => 'OK';

@@ -519,7 +519,7 @@ abstract class AppLocalizations {
   /// No description provided for @receiveInfo.
   ///
   /// In en, this message translates to:
-  /// **'Share this address to receive HYP. This address uses stealth keys for enhanced privacy.'**
+  /// **'Share this address to receive HPN. This address uses stealth keys for enhanced privacy.'**
   String get receiveInfo;
 
   /// No description provided for @sendTitle.
@@ -591,7 +591,7 @@ abstract class AppLocalizations {
   /// No description provided for @sendHyp.
   ///
   /// In en, this message translates to:
-  /// **'Send HYP'**
+  /// **'Send HPN'**
   String get sendHyp;
 
   /// No description provided for @transactionLayer.
@@ -603,7 +603,7 @@ abstract class AppLocalizations {
   /// No description provided for @transactionLayerMessage.
   ///
   /// In en, this message translates to:
-  /// **'The signing backend is ready. Transaction broadcasting requires connecting the wallet to a Hyphen node via the RPC interface.\n\nUse the pool mining setup to earn HYP first, then transactions will be available once the RPC sync layer is integrated.'**
+  /// **'The signing backend is ready. Transaction broadcasting requires connecting the wallet to a Hyphen node via the RPC interface.\n\nUse the pool mining setup to earn HPN first, then transactions will be available once the RPC sync layer is integrated.'**
   String get transactionLayerMessage;
 
   /// No description provided for @ok.

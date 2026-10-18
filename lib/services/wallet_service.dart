@@ -25,7 +25,12 @@ const _kLastScannedHeight = 'last_scanned_height';
 const _kOwnedOutputs = 'owned_outputs';
 const _kTransferHistory = 'transfer_history';
 
-const kDefaultRpcEndpoint = 'bytesnap.tech:38333';
+/// RPC ports per profile. The non-mainnet node this wallet points at is the
+/// devnet profile, which listens on 48333; nothing serves testnet's 38333.
+const kDefaultRpcPort = 48333;
+const kDefaultMainnetRpcPort = 18333;
+
+const kDefaultRpcEndpoint = 'bytesnap.tech:48333';
 const kDefaultMainnetRpcEndpoint = 'bytesnap.tech:18333';
 
 (String host, int port)? _parseEndpoint(String raw, int defaultPort) {
@@ -49,7 +54,7 @@ const kDefaultMainnetRpcEndpoint = 'bytesnap.tech:18333';
 }
 
 String _derivePoolApiEndpoint(String rpcEndpoint) {
-  final parsed = _parseEndpoint(rpcEndpoint, 38333);
+  final parsed = _parseEndpoint(rpcEndpoint, kDefaultRpcPort);
   if (parsed == null) {
     return '';
   }
@@ -57,7 +62,7 @@ String _derivePoolApiEndpoint(String rpcEndpoint) {
 }
 
 String _deriveExplorerApiEndpoint(String rpcEndpoint) {
-  final parsed = _parseEndpoint(rpcEndpoint, 38333);
+  final parsed = _parseEndpoint(rpcEndpoint, kDefaultRpcPort);
   if (parsed == null) {
     return '';
   }
@@ -608,7 +613,7 @@ class WalletService extends ChangeNotifier {
       spendPublicHex: result.spendPublicHex,
     );
     _startMinedRewardsPolling();
-    await _refreshMinedRewards();
+    await refreshAll();
     await loadTransferHistory();
     notifyListeners();
   }
@@ -744,9 +749,11 @@ class WalletService extends ChangeNotifier {
   (String, int) get _rpcHostPort {
     final parsed = _parseEndpoint(
       _state.rpcEndpoint,
-      _state.network == HyphenNetwork.mainnet ? 18333 : 38333,
+      _state.network == HyphenNetwork.mainnet
+          ? kDefaultMainnetRpcPort
+          : kDefaultRpcPort,
     );
-    return parsed ?? ('127.0.0.1', 38333);
+    return parsed ?? ('127.0.0.1', kDefaultRpcPort);
   }
 
   /// Scan the blockchain for wallet-owned outputs and update balance.
@@ -886,7 +893,7 @@ class WalletService extends ChangeNotifier {
   /// Send a shielded transaction.
   ///
   /// [recipientAddress] must be a valid hy1... address.
-  /// [amountAtomic] is the amount in atomic units (1 HYP = 1e12 atomic).
+  /// [amountAtomic] is the amount in atomic units (1 HPN = 1e12 atomic).
   /// [feeAtomic] is the transaction fee in atomic units.
   /// The consensus-mandated ring size for the current network.
   int get networkRingSize => _state.network == HyphenNetwork.mainnet ? 16 : 4;
@@ -1067,6 +1074,24 @@ class WalletService extends ChangeNotifier {
   }
 
   Future<void> refreshMinedRewards() async {
+    await _refreshMinedRewards();
+    notifyListeners();
+  }
+
+  /// Refresh both the scanned on-chain balance and the mining reward panels.
+  ///
+  /// Pull-to-refresh used to call [_refreshMinedRewards] alone, so a wallet
+  /// that received coinbase outputs kept showing a zero balance until the send
+  /// screen happened to trigger a scan.
+  Future<void> refreshAll() async {
+    await _loadCachedOutputs();
+    if (_state.isUnlocked && _state.seedHex != null) {
+      try {
+        await scanWalletOutputs();
+      } catch (_) {
+        // An unreachable node must not hide the balance already cached.
+      }
+    }
     await _refreshMinedRewards();
     notifyListeners();
   }

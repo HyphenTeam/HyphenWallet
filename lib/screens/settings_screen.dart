@@ -878,7 +878,9 @@ class SettingsScreen extends StatelessWidget {
     try {
       final parts = endpoint.split(':');
       final host = parts[0];
-      final port = parts.length > 1 ? int.tryParse(parts[1]) ?? 38333 : 38333;
+      final port = parts.length > 1
+          ? int.tryParse(parts[1]) ?? kDefaultRpcPort
+          : kDefaultRpcPort;
       final socket = await Socket.connect(
         host,
         port,

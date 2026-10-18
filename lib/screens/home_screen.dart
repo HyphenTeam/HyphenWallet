@@ -133,7 +133,7 @@ class _HomeTab extends StatelessWidget {
     final walletName = state.activeWallet?.name ?? 'Hyphen';
     final cs = Theme.of(context).colorScheme;
     return RefreshIndicator(
-      onRefresh: () => wallet.refreshMinedRewards(),
+      onRefresh: () => wallet.refreshAll(),
       color: HyphenColors.forestGreen,
       child: CustomScrollView(
         slivers: [
@@ -369,7 +369,7 @@ class _BalanceHero extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'HYP',
+                'HPN',
                 style: TextStyle(
                   color: HyphenColors.brightGreen.withAlpha(200),
                   fontSize: 14,
@@ -1040,7 +1040,7 @@ String _formatAtomic(String s) {
   final a = BigInt.tryParse(s) ?? BigInt.zero;
   const d = 12;
   final divisor = BigInt.from(10).pow(d);
-  return '${a ~/ divisor}.${(a % divisor).abs().toString().padLeft(d, "0")} HYP';
+  return '${a ~/ divisor}.${(a % divisor).abs().toString().padLeft(d, "0")} HPN';
 }
 
 String _shortHash(String v) =>

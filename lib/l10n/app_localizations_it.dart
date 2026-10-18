@@ -234,7 +234,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get receiveInfo =>
-      'Condividi questo indirizzo per ricevere HYP. Questo indirizzo usa chiavi stealth per una privacy migliorata.';
+      'Condividi questo indirizzo per ricevere HPN. Questo indirizzo usa chiavi stealth per una privacy migliorata.';
 
   @override
   String get sendTitle => 'Invia';
@@ -270,14 +270,14 @@ class AppLocalizationsIt extends AppLocalizations {
   String get invalidRecipientAddress => 'Indirizzo destinatario non valido';
 
   @override
-  String get sendHyp => 'Invia HYP';
+  String get sendHyp => 'Invia HPN';
 
   @override
   String get transactionLayer => 'Livello transazione';
 
   @override
   String get transactionLayerMessage =>
-      'Il backend di firma è pronto. La trasmissione delle transazioni richiede la connessione del portafoglio a un nodo Hyphen tramite l\'interfaccia RPC.\n\nUsa prima il mining in pool per guadagnare HYP, poi le transazioni saranno disponibili una volta integrato il livello di sincronizzazione RPC.';
+      'Il backend di firma è pronto. La trasmissione delle transazioni richiede la connessione del portafoglio a un nodo Hyphen tramite l\'interfaccia RPC.\n\nUsa prima il mining in pool per guadagnare HPN, poi le transazioni saranno disponibili una volta integrato il livello di sincronizzazione RPC.';
 
   @override
   String get ok => 'OK';
