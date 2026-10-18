@@ -3,7 +3,7 @@ name = "rust_lib_hyphen_wallet"
 version = "0.1.1"
 edition = "2021"
 authors = ["Hyphen Contributors"]
-license = "PolyForm-Strict-1.0.0"
+license-file = "../LICENSE"
 exclude = ["target", "dist"]
 [workspace]
 
