@@ -18,7 +18,7 @@ use hyphen_tx::transaction::Transaction;
 
 use crate::address::HyphenAddress;
 use crate::keys::MasterKey;
-use crate::rpc_client::RpcClient;
+use crate::rpc_client::{ChainInfoResponse, RpcClient};
 
 // ─── Public types exposed to FFI ────────────────────────────
 
@@ -88,12 +88,51 @@ pub struct ChainStatus {
 
 pub fn get_chain_status(host: String, port: u16) -> Result<ChainStatus, String> {
     let mut client = RpcClient::connect(&host, port)?;
-    let info = client.get_chain_info()?;
+    let info = verified_chain_info(&mut client)?;
     Ok(ChainStatus {
         height: info.height,
         total_outputs: info.total_outputs,
         tip_hash_hex: hex::encode(&info.tip_hash),
     })
+}
+
+/// Reads the node's chain info and refuses to continue unless the node proves
+/// one of the pinned network identities.
+///
+/// Every RPC entry point goes through this. A wallet that skipped the check
+/// could be pointed at a node replaying a different chain — a devnet mirror that
+/// happens to serve familiar-looking data — and would happily sign value-bearing
+/// transactions against it.
+fn verified_chain_info(client: &mut RpcClient) -> Result<ChainInfoResponse, String> {
+    let info = client.get_chain_info()?;
+    crate::chain_identity::verify(
+        &info.network,
+        &info.network_magic,
+        &info.consensus_params_hash,
+        &info.genesis_hash,
+        info.block_version,
+        info.pouw_protocol_version,
+    )?;
+    Ok(info)
+}
+
+/// Whether a network magic addresses the value-bearing mainnet.
+fn magic_is_mainnet(network_magic: &[u8]) -> bool {
+    network_magic == b"HYPN"
+}
+
+/// Rejects a mismatch between the wallet's configured network and the node's.
+fn require_network_class(info: &ChainInfoResponse, wallet_is_mainnet: bool) -> Result<(), String> {
+    let node_is_mainnet = magic_is_mainnet(&info.network_magic);
+    if node_is_mainnet != wallet_is_mainnet {
+        return Err(format!(
+            "wallet network setting does not match the node: the node serves {} ({}), the wallet is configured for {}",
+            info.network,
+            if node_is_mainnet { "mainnet" } else { "testnet/devnet" },
+            if wallet_is_mainnet { "mainnet" } else { "testnet/devnet" },
+        ));
+    }
+    Ok(())
 }
 
 // ─── Output scanning ───────────────────────────────────────
@@ -110,7 +149,7 @@ pub fn scan_wallet_outputs(
     account: u32,
     start_height: u64,
     end_height: u64,
-    _is_mainnet: bool,
+    is_mainnet: bool,
 ) -> Result<ScanResult, String> {
     let seed_bytes = hex::decode(&seed_hex).map_err(|e| format!("invalid seed hex: {e}"))?;
     if seed_bytes.len() != 64 {
@@ -127,6 +166,7 @@ pub fn scan_wallet_outputs(
     let _spend_key = SpendKey(keys.spend_secret.to_bytes());
 
     let mut client = RpcClient::connect(&host, port)?;
+    require_network_class(&verified_chain_info(&mut client)?, is_mainnet)?;
     let mut owned_outputs = Vec::new();
     let mut spent_key_images = HashSet::new();
     let mut global_index: u64 = 0;
@@ -134,9 +174,6 @@ pub fn scan_wallet_outputs(
 
     // Determine starting global_index by scanning from genesis if start_height > 0
     if start_height > 0 {
-        // Get the cumulative output count up to start_height - 1
-        // by scanning block at start_height and using its metadata
-        // For efficiency, we count outputs in blocks before start_height
         for h in 0..start_height {
             let block = client.get_block_by_height(h)?;
             for tx_blob in &block.transactions {
@@ -365,8 +402,16 @@ pub fn build_transaction(request: TransactionRequest) -> Result<BuiltTransaction
     // Connect to node
     let mut client = RpcClient::connect(&host, port)?;
 
-    // Get chain info for total output count (needed for decoys)
-    let chain_info = client.get_chain_info()?;
+    // Get chain info for total output count (needed for decoys); this also
+    // pins the node to a known chain and rejects a cross-network recipient.
+    let chain_info = verified_chain_info(&mut client)?;
+    let node_is_mainnet = magic_is_mainnet(&chain_info.network_magic);
+    if dest_addr.is_mainnet() != node_is_mainnet {
+        return Err(format!(
+            "recipient address version does not match the node's network {}",
+            chain_info.network
+        ));
+    }
     let total_outputs = chain_info.total_outputs;
 
     // Extract epoch seed for TERA binding

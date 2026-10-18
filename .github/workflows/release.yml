@@ -85,8 +85,11 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           if ($IsWindows) { $archive="dist/${{ matrix.artifact }}.zip"; Compress-Archive -Path "$stage/*" -DestinationPath $archive }
           else { $archive="dist/${{ matrix.artifact }}.tar.gz"; tar -czf $archive -C build/package '${{ matrix.artifact }}' }
-          $name=Split-Path $archive -Leaf; $hash=(Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $name" | Set-Content "$archive.sha256" -Encoding ascii
+          $name=Split-Path $archive -Leaf; $hashOutput = & cargo run --quiet --locked --manifest-path rust/Cargo.toml --example blake3-file -- $archive 2>&1
+          if ($LASTEXITCODE -ne 0) { throw "BLAKE3 hashing failed: $($hashOutput | Out-String)" }
+          $hash = ($hashOutput | Where-Object { "$_".Trim() } | Select-Object -Last 1).ToString().Trim()
+          if ($hash -notmatch '^[0-9a-f]{64}$') { throw "unexpected BLAKE3 output: $hash" }
+          "$hash  $name" | Set-Content "$archive.blake3" -Encoding ascii
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with: { name: "${{ matrix.artifact }}", path: "dist/*", if-no-files-found: error, retention-days: 14 }
   publish:
@@ -107,4 +110,4 @@ jobs:
         run: |
           $tag="build-$env:RUN.$env:ATTEMPT-$($env:SHA.Substring(0,12))"
           $assets=(Get-ChildItem dist -File).FullName
-          gh release create $tag @assets --target $env:SHA --title "Hyphen Wallet $tag" --prerelease --generate-notes --notes "Automated unaudited development build. Verify the matching SHA-256 file."
+          gh release create $tag @assets --target $env:SHA --title "Hyphen Wallet $tag" --prerelease --generate-notes --notes "Automated unaudited development build. Verify the matching BLAKE3 file."

@@ -217,6 +217,8 @@ class WalletState {
   final List<RewardActivity> rewardActivities;
   final List<TransferActivity> transferActivities;
   final String onChainBalanceAtomic;
+  /// Why the last refresh could not read the chain, empty when it succeeded.
+  final String syncError;
 
   const WalletState({
     this.isUnlocked = false,
@@ -247,6 +249,7 @@ class WalletState {
     this.rewardActivities = const [],
     this.transferActivities = const [],
     this.onChainBalanceAtomic = '0',
+    this.syncError = '',
   });
 
   WalletState copyWith({
@@ -278,6 +281,7 @@ class WalletState {
     List<RewardActivity>? rewardActivities,
     List<TransferActivity>? transferActivities,
     String? onChainBalanceAtomic,
+    String? syncError,
   }) {
     return WalletState(
       isUnlocked: isUnlocked ?? this.isUnlocked,
@@ -311,6 +315,7 @@ class WalletState {
       rewardActivities: rewardActivities ?? this.rewardActivities,
       transferActivities: transferActivities ?? this.transferActivities,
       onChainBalanceAtomic: onChainBalanceAtomic ?? this.onChainBalanceAtomic,
+      syncError: syncError ?? this.syncError,
     );
   }
 
@@ -756,77 +761,44 @@ class WalletService extends ChangeNotifier {
     return parsed ?? ('127.0.0.1', kDefaultRpcPort);
   }
 
-  /// Scan the blockchain for wallet-owned outputs and update balance.
+  /// Scan the chain for wallet-owned outputs and update the balance.
+  ///
+  /// Every scan walks from genesis to the tip and its result *replaces* the
+  /// cached set. A partial scan cannot be exact over this RPC surface: the node
+  /// exposes no key-image index, so any block range that omits the block where a
+  /// cached output was spent keeps that output looking unspent, and the balance
+  /// stays inflated after a spend, a restore on another device, or a chain
+  /// reset. The full walk costs the same number of `get_block_by_height` calls —
+  /// the partial path already re-reads every earlier block to rebuild the global
+  /// output index — so exactness is free here.
   Future<void> scanWalletOutputs() async {
     if (!_state.isUnlocked || _state.seedHex == null) {
       throw Exception('Wallet not unlocked');
     }
 
     final (host, port) = _rpcHostPort;
-
-    // Get chain height
     final status = await rust.getChainStatus(host: host, port: port);
 
-    // Load last scanned height
-    final lastScannedStr = await _storage.read(
-      key: '${_kLastScannedHeight}_${_state.activeWalletId}',
-    );
-    final startHeight = lastScannedStr != null
-        ? (int.tryParse(lastScannedStr) ?? 0) + 1
-        : 0;
-
-    if (startHeight > status.height.toInt()) {
-      // Already up to date - just load existing outputs
-      await _loadCachedOutputs();
-      notifyListeners();
-      return;
-    }
-
-    // Scan for new outputs
     final result = await rust.scanWalletOutputs(
       host: host,
       port: port,
       seedHex: _state.seedHex!,
       account: 0,
-      startHeight: BigInt.from(startHeight),
+      startHeight: BigInt.zero,
       endHeight: status.height,
       isMainnet: _state.network == HyphenNetwork.mainnet,
     );
 
-    // Merge with existing cached outputs
-    final existingJson = await _storage.read(
-      key: '${_kOwnedOutputs}_${_state.activeWalletId}',
-    );
-    String mergedJson;
-    if (existingJson != null &&
-        existingJson.isNotEmpty &&
-        existingJson != '[]') {
-      // Merge arrays
-      final existing = existingJson.substring(
-        0,
-        existingJson.length - 1,
-      ); // remove ]
-      final newOutputs = result.outputsJson.substring(1); // remove [
-      if (result.outputCount > BigInt.zero) {
-        mergedJson = '$existing,$newOutputs';
-      } else {
-        mergedJson = existingJson;
-      }
-    } else {
-      mergedJson = result.outputsJson;
-    }
-
-    // Save updated outputs and scanned height
     await _storage.write(
       key: '${_kOwnedOutputs}_${_state.activeWalletId}',
-      value: mergedJson,
+      value: result.outputsJson,
     );
     await _storage.write(
       key: '${_kLastScannedHeight}_${_state.activeWalletId}',
       value: result.scannedHeight.toString(),
     );
 
-    _updateOnChainBalance(mergedJson);
+    _updateOnChainBalance(result.outputsJson);
     notifyListeners();
   }
 
@@ -865,7 +837,6 @@ class WalletService extends ChangeNotifier {
     );
     if (json == null || json.isEmpty || json == '[]') return BigInt.zero;
 
-    // Parse the outputs and sum values
     try {
       final list = jsonDecode(json) as List;
       var total = BigInt.zero;
@@ -931,30 +902,40 @@ class WalletService extends ChangeNotifier {
     return result;
   }
 
+  /// Drops the outputs consumed by a transaction the node accepted.
+  ///
+  /// The change output only becomes visible once the block is mined, so the
+  /// balance is briefly understated instead of double counted; the next scan
+  /// restores it.
   Future<void> removeSpentOutputs(String spentIndicesCsv) async {
     if (spentIndicesCsv.isEmpty || _state.activeWalletId == null) return;
-    final spentSet = spentIndicesCsv
-        .split(',')
-        .where((s) => s.trim().isNotEmpty)
-        .map((s) => int.parse(s.trim()))
-        .toSet();
-    if (spentSet.isEmpty) return;
+    final spent = <int>{};
+    for (final raw in spentIndicesCsv.split(',')) {
+      final index = int.tryParse(raw.trim());
+      if (index != null) spent.add(index);
+    }
+    if (spent.isEmpty) return;
 
     final json = await _storage.read(
       key: '${_kOwnedOutputs}_${_state.activeWalletId}',
     );
     if (json == null || json.isEmpty || json == '[]') return;
 
-    try {
-      final list = jsonDecode(json) as List;
-      final filtered = list
-          .where((item) => !spentSet.contains(item['global_index'] as int?))
-          .toList();
-      await _storage.write(
-        key: '${_kOwnedOutputs}_${_state.activeWalletId}',
-        value: jsonEncode(filtered),
-      );
-    } catch (_) {}
+    final decoded = jsonDecode(json);
+    if (decoded is! List) return;
+    final remaining = [
+      for (final item in decoded)
+        if (item is Map<String, dynamic> &&
+            !spent.contains(item['global_index']))
+          item,
+    ];
+    final updated = jsonEncode(remaining);
+    await _storage.write(
+      key: '${_kOwnedOutputs}_${_state.activeWalletId}',
+      value: updated,
+    );
+    _updateOnChainBalance(updated);
+    notifyListeners();
   }
 
   /// Record a sent transfer in the persistent transfer history.
@@ -1083,15 +1064,21 @@ class WalletService extends ChangeNotifier {
   /// Pull-to-refresh used to call [_refreshMinedRewards] alone, so a wallet
   /// that received coinbase outputs kept showing a zero balance until the send
   /// screen happened to trigger a scan.
+  ///
+  /// A failed scan keeps the cached balance on screen — an unreachable node must
+  /// not blank a wallet — but the reason is recorded in [WalletState.syncError]
+  /// so the UI can say why the numbers are stale.
   Future<void> refreshAll() async {
     await _loadCachedOutputs();
+    var syncError = '';
     if (_state.isUnlocked && _state.seedHex != null) {
       try {
         await scanWalletOutputs();
-      } catch (_) {
-        // An unreachable node must not hide the balance already cached.
+      } catch (error) {
+        syncError = error.toString();
       }
     }
+    _state = _state.copyWith(syncError: syncError);
     await _refreshMinedRewards();
     notifyListeners();
   }

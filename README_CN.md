@@ -9,6 +9,7 @@ Hyphen Wallet 是 Hyphen 主链的独立 Flutter 钱包。Flutter 负责界面�
 这是未经外部钱包、密码学、移动端或供应链审计的实验软件，只应使用研究网络资金。
 
 - 钱包文件使用版本化 Argon2id 和 XChaCha20-Poly1305 认证加密。历史 BLAKE3-XOF 文件只保留解锁和迁移兼容。
+- BIP39 助记词的校验和与种子派生按标准使用 SHA-256/SHA-512；这是兼容性边界，不是 Hyphen 自定义哈希。链上承诺、交易与矿池摘要全部使用 BLAKE3。
 - 助记词是最终恢复凭据；设备安全存储和密码不能替代离线助记词备份。
 - 链上交易依赖主链的 Ristretto、CLSAG 和范围证明实现，该组合尚未独立审计。
 - Ed25519 + WOTS 消息 API 是实验功能。WOTS 公钥没有被共识锚定，当前无状态 API 也不能强制一次性使用，不能据此声称后量子安全。
@@ -24,7 +25,9 @@ Hyphen Wallet 是 Hyphen 主链的独立 Flutter 钱包。Flutter 负责界面�
 - consensus_params_hash
 - genesis_hash
 
-节点缺少任一身份字段、返回旧哈希目标链或身份不匹配时，Wallet 会在扫描和提交交易前拒绝连接。
+节点缺少任一身份字段、返回旧哈希目标链或身份不匹配时，Wallet 会在扫描和提交交易前拒绝连接。链状态、输出扫描、交易构造三条路径都会各自重跑这套校验，扫描与发送还会拒绝网络等级（主网 vs 测试/开发网）不符的节点，发送还会拒绝另一网络等级的收款地址。
+
+四条身份向量全部钉死：`hyphen-mainnet`、`hyphen-testnet`、`hyphen-devnet-v2`、`hyphen-neural-devnet-v1`。
 
 `PoUW protocol version` 只是链身份字段。Wallet 本身不复算科学工作，也不表示用户任务的有用工作结算已启用；共识验证仍由连接节点负责。
 
@@ -37,6 +40,15 @@ consensus_params_hash=521f6cdc47f4424c1ea7b9f4d6770cf114f620cdff62958060f8c6953c
 genesis_hash=5f7c144f0ef27880259b2429e46ef175685da679916fcc6b80c45f457465e32d
 block_version=5
 pouw_protocol_version=3
+```
+
+神经工作量档位的身份（`--network neural-devnet`）：
+
+```text
+network=hyphen-neural-devnet-v1
+network_magic=48594e4e
+consensus_params_hash=451ca637dafb07604b8dcabebc86c54d72efe590ac5912bb2a2f35ea6d41b6a9
+genesis_hash=6d3c028ecd7380ba143a62c8b82fa706155da56fb42ec8cf8b30ec4dc989d058
 ```
 
 上述取值来自主链的 test-vectors/chain-identity-v6.json，并钉在 rust/src/chain_identity.rs，二者一旦漂移会有单元测试失败。
@@ -61,9 +73,11 @@ Rust 锁文件固定主链密码学、交易和证明依赖的精确提交。更
 
 ## 钱包流程
 
-创建或恢复钱包后，先离线记录并复核助记词，再接收资产。配置节点 RPC 后从已知高度扫描。重扫会丢弃旧缓存假设，并过滤 key image 已花费的输出。
+创建或恢复钱包后，先离线记录并复核助记词，再接收资产。配置节点 RPC 后执行扫描。
 
-交易构造会选择本钱包输出、获取诱饵、生成 CLSAG 和范围证明，再提交序列化交易。节点接受只表示进入 mempool，不表示确认；重组后交易可能消失，确认跟踪必须处理这种情况。
+每次扫描都是从创世块开始的完整扫描，结果是权威集合，直接替换本地缓存。当前 RPC 没有 key image 索引，局部扫描会漏掉“缓存输出在更晚区块被花费”的情况，余额就会虚高；而局部扫描为了重建全局输出序号本来就要重读之前所有区块，调用次数与全量扫描相同，所以准确性没有额外代价。链被重置、在另一台设备上花费、或从助记词恢复之后，一次全量扫描即可修回正确状态。刷新失败不会被静默吞掉：`WalletState.syncError` 会带上原因（例如身份不匹配），首页把它显示成横幅。
+
+交易构造会选择本钱包输出、获取诱饵、生成 CLSAG 和范围证明，再提交序列化交易。节点接受只表示进入 mempool，不表示确认；节点确认已花费的输入会立即从缓存移除，余额短暂偏低，找零确认后由下一次扫描补回。重组后交易可能消失，确认跟踪必须处理这种情况。
 
 payout-agent 是一个仅绑定 loopback 的 HTTP 服务（Courierust 提供，与 Pool 端同一套 HTTP 实现）：token 走 `authorization` 头，在恒定时间内比较；路由为 `/v1/health`、`/v1/submit`、`/v1/status`。它把 intent_id 固定绑定到一份已签名交易，相同 intent 可幂等重试，替换已绑定交易会被拒绝。它不能消除 Pool 运营者、主机失陷或深度重组风险。
 

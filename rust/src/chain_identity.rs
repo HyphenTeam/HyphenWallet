@@ -18,12 +18,18 @@ pub struct ChainIdentity {
     pub genesis_hash: &'static str,
 }
 
-pub const CHAIN_IDENTITIES: [ChainIdentity; 3] = [
+pub const CHAIN_IDENTITIES: [ChainIdentity; 4] = [
     ChainIdentity {
         network: "hyphen-devnet-v2",
         network_magic: *b"HYDV",
         consensus_params_hash: "521f6cdc47f4424c1ea7b9f4d6770cf114f620cdff62958060f8c6953cb69de8",
         genesis_hash: "5f7c144f0ef27880259b2429e46ef175685da679916fcc6b80c45f457465e32d",
+    },
+    ChainIdentity {
+        network: "hyphen-neural-devnet-v1",
+        network_magic: *b"HYNN",
+        consensus_params_hash: "451ca637dafb07604b8dcabebc86c54d72efe590ac5912bb2a2f35ea6d41b6a9",
+        genesis_hash: "6d3c028ecd7380ba143a62c8b82fa706155da56fb42ec8cf8b30ec4dc989d058",
     },
     ChainIdentity {
         network: "hyphen-testnet",
@@ -71,12 +77,18 @@ mod tests {
 
     /// Independent copy of the canonical vector. Drift in `CHAIN_IDENTITIES`
     /// fails here instead of surfacing as a rejected handshake at runtime.
-    const VECTOR: [(&str, [u8; 4], &str, &str); 3] = [
+    const VECTOR: [(&str, [u8; 4], &str, &str); 4] = [
         (
             "hyphen-devnet-v2",
             *b"HYDV",
             "521f6cdc47f4424c1ea7b9f4d6770cf114f620cdff62958060f8c6953cb69de8",
             "5f7c144f0ef27880259b2429e46ef175685da679916fcc6b80c45f457465e32d",
+        ),
+        (
+            "hyphen-neural-devnet-v1",
+            *b"HYNN",
+            "451ca637dafb07604b8dcabebc86c54d72efe590ac5912bb2a2f35ea6d41b6a9",
+            "6d3c028ecd7380ba143a62c8b82fa706155da56fb42ec8cf8b30ec4dc989d058",
         ),
         (
             "hyphen-testnet",

@@ -199,6 +199,10 @@ class _HomeTab extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
                   _QuickActions(l10n: l10n),
+                  if (state.syncError.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    _SyncErrorBanner(message: state.syncError),
+                  ],
                   const SizedBox(height: 28),
                   if (state.poolPayoutMode.isNotEmpty) ...[
                     _PoolInfoStrip(state: state, l10n: l10n),
@@ -259,6 +263,39 @@ class _NetworkChip extends StatelessWidget {
       side: BorderSide.none,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+class _SyncErrorBanner extends StatelessWidget {
+  final String message;
+
+  const _SyncErrorBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.errorContainer.withAlpha(60),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.error.withAlpha(70)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.sync_problem, size: 18, color: cs.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 12, color: cs.onErrorContainer),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

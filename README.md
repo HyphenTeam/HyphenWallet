@@ -61,7 +61,9 @@ and an end-to-end devnet transfer test.
 ## Chain compatibility
 
 Wallet RPC mirrors the append-only protobuf fields exposed by the node's chain
-status response. The current devnet identity is:
+status response. Four identities are pinned: `hyphen-mainnet`,
+`hyphen-testnet`, `hyphen-devnet-v2` and `hyphen-neural-devnet-v1`. The current
+devnet identity is:
 
 ```text
 network=hyphen-devnet-v2
@@ -75,6 +77,12 @@ pouw_protocol_version=3
 These values mirror `test-vectors/chain-identity-v6.json` of the base chain and are
 pinned in `rust/src/chain_identity.rs`; a unit test fails if the two drift.
 
+Every RPC entry point — chain status, output scan and transaction building —
+rebuilds the identity from the node's own reply and rejects the connection when
+the magic, parameter hash, genesis hash, block version or PoUW protocol version
+does not match a pinned vector. Scanning and sending additionally refuse a node
+whose class (mainnet versus testnet/devnet) disagrees with the wallet's network
+setting, and sending refuses a recipient address minted for the other class.
 This pinning prevents accidental cross-chain use. It does not prove that a
 remote node is honest about canonical history; use a trusted node or compare
 independent nodes.
@@ -84,13 +92,29 @@ independent nodes.
 Create or restore a wallet in the UI, write the mnemonic down offline, and
 verify the backup before receiving value. Configure the node RPC host and port,
 scan from a known height, and compare the displayed chain with the intended
-network. A rescan discards stale cached assumptions and filters outputs whose
-key images are already spent.
+network.
+
+A scan is always a full scan from genesis and its result replaces the cached
+output set. Partial scans cannot be exact over this RPC surface: the node
+exposes no key-image index, so a range that omits the block where a cached
+output was spent leaves that output looking unspent, and the balance stays
+inflated after a spend, a restore on another device, or a chain reset. The full
+walk costs the same number of `get_block_by_height` calls, because the partial
+path already re-reads every earlier block to rebuild the global output index.
+A rescan therefore also repairs a wallet that was pointed at a chain which has
+since been replaced — the cached outputs of the old chain cannot survive it.
+
+The home screen reports a failed refresh instead of silently keeping stale
+numbers: `WalletState.syncError` carries the reason (for example a pinned
+identity mismatch) and the balance card renders it as a banner.
 
 Transaction construction selects owned outputs, fetches decoys, constructs
 CLSAG signatures and range proofs, and submits a serialized transaction to the
-node. Node acceptance means mempool admission, not confirmation. Confirmation
-tracking must tolerate a transaction disappearing after a reorg.
+node. Node acceptance means mempool admission, not confirmation. Outputs the
+node accepted as spent are dropped from the cache immediately, so the balance
+is briefly understated until the change output confirms; the next scan restores
+it. Confirmation tracking must tolerate a transaction disappearing after a
+reorg.
 
 ## Wallet mathematics
 
@@ -127,6 +151,12 @@ causes authentication failure. Random 128-bit salts separate equal passwords;
 random 192-bit nonces make accidental nonce reuse negligible. Security still
 depends on password entropy, OS randomness, Argon2 and XChaCha20-Poly1305, and
 the device remaining uncompromised.
+
+BIP39 is a compatibility boundary: its mnemonic checksum and seed derivation use
+SHA-256 and SHA-512 exactly as the standard specifies. Those primitives are not
+used as a Hyphen hash; every chain-defined commitment, transaction digest and
+pool digest is BLAKE3. Replacing the BIP39 primitives would make standard
+mnemonics unrecoverable, so they stay standard-conformant.
 
 ## Automatic pool payout agent
 
@@ -183,7 +213,7 @@ transaction hashes or signatures.
 
 CI runs Rust formatting, strict Clippy, tests, Flutter formatting/analysis, and
 a desktop build gate. Successful CI on `main` triggers commit-bound desktop and
-payout-agent builds. Release archives contain build/debug metadata and SHA-256
+payout-agent builds. Release archives contain build/debug metadata and BLAKE3
 files and are published as prereleases because the wallet is not audited.
 
 `pubspec.lock` records the host every package was resolved from, and the
@@ -241,9 +271,13 @@ Rust lockfile 固定了 Hyphen 主链依赖提交。升级这个提交属于协�
 
 ## 钱包工作流
 
-创建或恢复钱包后，先离线记录 mnemonic，并实际验证恢复结果，再接收资产。配置节点 RPC，确认网络身份，从可信高度扫描。重扫会重新判断已拥有输出，并通过 key image 查询移除已经花费的输出。
+创建或恢复钱包后，先离线记录 mnemonic，并实际验证恢复结果，再接收资产。配置节点 RPC，确认网络身份，从可信高度扫描。
 
-发送交易时，Rust 选择 owned outputs，获取 ring decoy，构造 CLSAG 与范围证明，再将序列化交易交给节点。节点 accepted 只表示进入 mempool，不是确认；交易状态必须按区块高度计算确认数，并能处理 reorg 后交易暂时消失。
+每次扫描都是从创世块开始的完整扫描，扫描结果是权威集合，直接替换本地缓存。当前 RPC 没有 key image 索引，局部扫描会漏掉“缓存输出在更晚的区块里被花费”这件事，余额就会虚高；而局部扫描为了重建全局输出序号本来就要重新读一遍之前所有区块，调用次数与全量扫描相同，所以准确性没有额外代价。链被重置、在另一台设备上花费、或从助记词恢复之后，一次全量扫描就能把钱包修回正确状态。
+
+节点身份在建链状态、扫描输出、构造交易三条路径上都会被强制校验：magic、参数哈希、创世哈希、区块版本、PoUW 协议版本必须命中钉死的四条向量；扫描与发送还会拒绝网络等级不符的节点，发送还会拒绝另一网络等级的收款地址。刷新失败不会被静默吞掉，`WalletState.syncError` 会把原因（例如身份不匹配）交给首页显示成横幅。
+
+发送交易时，Rust 选择 owned outputs，获取 ring decoy，构造 CLSAG 与范围证明，再将序列化交易交给节点。节点 accepted 只表示进入 mempool，不是确认；节点确认已花费的输入会立即从缓存移除，因此余额会短暂偏低，找零确认后由下一次扫描补回。交易状态必须按区块高度计算确认数，并能处理 reorg 后交易暂时消失。
 
 ## 交易与本地加密的数学说明
 
@@ -269,6 +303,8 @@ K=Argon2id(BLAKE3-DeriveKey(password),salt)
 ```
 
 Header 固定包含 magic、版本、KDF/AEAD 标识、参数、128-bit salt 和 192-bit nonce，并作为 associated data。修改版本、参数、salt、nonce、ciphertext 或 tag 都会认证失败。随机 salt 隔离相同密码，随机 nonce 让意外复用概率极低；但整体安全仍取决于密码熵、系统随机数、标准算法实现和设备没有被攻陷。
+
+BIP39 是兼容性边界：助记词校验和种子派生必须按标准使用 SHA-256 与 SHA-512。它们不是 Hyphen 定义的哈希；链上所有承诺、交易摘要和矿池摘要都使用 BLAKE3。替换 BIP39 的这两处原语会让标准助记词无法恢复，因此保留标准实现。
 
 ## 自动付款 Agent
 
@@ -306,7 +342,7 @@ revision `576bc67d972d1156fbabb1ddf579104d5ff2ff88`（chain identity v6），Wal
 
 ## CI 和 Release
 
-CI 执行 Rust 格式、严格 Clippy、测试，Flutter 格式和 analyze，并包含桌面构建门禁。只有 `main` CI 成功才自动构建桌面应用和 payout-agent。每个包包含提交号、工具链、调试信息与 SHA-256，并作为 prerelease 发布，因为钱包尚未外审。
+CI 执行 Rust 格式、严格 Clippy、测试，Flutter 格式和 analyze，并包含桌面构建门禁。只有 `main` CI 成功才自动构建桌面应用和 payout-agent。每个包包含提交号、工具链、调试信息与 BLAKE3，并作为 prerelease 发布，因为钱包尚未外审。
 
 Mnemonic、seed 文件、加密钱包、payout token、恢复词截图和生产签名状态都不能上传。
 
