@@ -217,6 +217,7 @@ class WalletState {
   final List<RewardActivity> rewardActivities;
   final List<TransferActivity> transferActivities;
   final String onChainBalanceAtomic;
+
   /// Why the last refresh could not read the chain, empty when it succeeded.
   final String syncError;
 
