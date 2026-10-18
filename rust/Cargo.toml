@@ -17,7 +17,6 @@ path = "src/bin/payout_agent.rs"
 [dependencies]
 flutter_rust_bridge = "=2.13.0"
 
-# Hyphen blockchain crates
 rustbinary = { version = "0.1.8", features = ["derive"] }
 hyphen-crypto = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "576bc67d972d1156fbabb1ddf579104d5ff2ff88" }
 hyphen-tx = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "576bc67d972d1156fbabb1ddf579104d5ff2ff88" }
@@ -39,9 +38,6 @@ argon2 = "0.6"
 chacha20poly1305 = "0.11"
 subtle = "2.6"
 
-# Randomness. `getrandom` is not called directly: its `wasm_js` feature is what
-# the generated `flutter_rust_bridge` web bindings need when the Rust half is
-# built for `wasm32`, and Cargo features are additive across the graph.
 rand = "0.10"
 getrandom = { version = "0.4.3", features = ["wasm_js"] }
 
