@@ -18,6 +18,7 @@ use crate::crypto;
 use crate::keys::{COIN_TYPE, MasterKey};
 use crate::wots;
 use rand::Rng;
+use zeroize::Zeroizing;
 
 /// Complete wallet creation result.
 pub struct WalletCreateResult {
@@ -65,7 +66,7 @@ pub fn generate_mnemonic(word_count: u8) -> Result<String, String> {
 /// Returns true if the mnemonic is valid (correct word count, valid words,
 /// correct checksum).
 pub fn validate_mnemonic(mnemonic: String) -> bool {
-    bip39::validate_mnemonic(&mnemonic)
+    bip39::validate_mnemonic(&Zeroizing::new(mnemonic))
 }
 
 /// Create a new wallet with a fresh 24-word mnemonic.
@@ -87,6 +88,7 @@ pub fn create_wallet_with_word_count(word_count: u8) -> Result<WalletCreateResul
 /// This compatibility transform does not add entropy to a weak password and
 /// must not be described as quantum-resistant.
 pub fn create_wallet_with_password(password: String) -> Result<WalletCreateResult, String> {
+    let password = Zeroizing::new(password);
     let mnemonic = bip39::generate_mnemonic(24)?;
     let pq_passphrase = pq_transform_password(&password);
     wallet_from_mnemonic(mnemonic, pq_passphrase)
@@ -97,9 +99,6 @@ pub fn create_wallet_with_password(password: String) -> Result<WalletCreateResul
 /// Pass the original passphrase bytes. Flutter passes the result of
 /// `pq_transform_password`. `restore_wallet_with_password` accepts the original password.
 pub fn restore_wallet(mnemonic: String, passphrase: String) -> Result<WalletCreateResult, String> {
-    if !bip39::validate_mnemonic(&mnemonic) {
-        return Err("invalid mnemonic phrase".into());
-    }
     wallet_from_mnemonic(mnemonic, passphrase)
 }
 
@@ -108,9 +107,7 @@ pub fn restore_wallet_with_password(
     mnemonic: String,
     password: String,
 ) -> Result<WalletCreateResult, String> {
-    if !bip39::validate_mnemonic(&mnemonic) {
-        return Err("invalid mnemonic phrase".into());
-    }
+    let password = Zeroizing::new(password);
     let pq_passphrase = pq_transform_password(&password);
     wallet_from_mnemonic(mnemonic, pq_passphrase)
 }
@@ -147,7 +144,11 @@ fn wallet_from_mnemonic(
     mnemonic: String,
     passphrase: String,
 ) -> Result<WalletCreateResult, String> {
-    let passphrase = zeroize::Zeroizing::new(passphrase);
+    let mut mnemonic = Zeroizing::new(mnemonic);
+    let passphrase = Zeroizing::new(passphrase);
+    if !bip39::validate_mnemonic(&mnemonic) {
+        return Err("invalid mnemonic phrase".into());
+    }
     let seed = zeroize::Zeroizing::new(bip39::mnemonic_to_seed(&mnemonic, &passphrase));
     let mk = MasterKey::from_seed(&seed);
     let keys = mk.derive_default();
@@ -159,7 +160,7 @@ fn wallet_from_mnemonic(
     let addr_test = HyphenAddress::new_testnet(view_pub, spend_pub);
 
     Ok(WalletCreateResult {
-        mnemonic,
+        mnemonic: std::mem::take(&mut *mnemonic),
         seed_hex: hex::encode(seed.as_slice()),
         address_mainnet: addr_main.encode(),
         address_testnet: addr_test.encode(),
@@ -333,6 +334,8 @@ pub fn encrypt_wallet(mnemonic: String, password: String) -> Result<Vec<u8>, Str
     use chacha20poly1305::aead::{Aead, KeyInit, Payload};
     use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 
+    let password = Zeroizing::new(password);
+    let mnemonic = Zeroizing::new(mnemonic);
     let mut salt = [0u8; WALLET_SALT_LEN];
     let mut nonce = [0u8; WALLET_NONCE_LEN];
     rand::rng().fill_bytes(&mut salt);
@@ -348,8 +351,8 @@ pub fn encrypt_wallet(mnemonic: String, password: String) -> Result<Vec<u8>, Str
     header.extend_from_slice(&nonce);
     debug_assert_eq!(header.len(), WALLET_HEADER_LEN);
 
-    let mut key = derive_argon2id_key(password.as_bytes(), &salt)?;
-    let cipher = XChaCha20Poly1305::new((&key).into());
+    let key = derive_argon2id_key(password.as_bytes(), &salt)?;
+    let cipher = XChaCha20Poly1305::new((&*key).into());
     let nonce = XNonce::from(nonce);
     let ciphertext = cipher
         .encrypt(
@@ -360,14 +363,13 @@ pub fn encrypt_wallet(mnemonic: String, password: String) -> Result<Vec<u8>, Str
             },
         )
         .map_err(|_| "wallet encryption failed".to_string())?;
-    zeroize::Zeroize::zeroize(&mut key);
-
     header.extend_from_slice(&ciphertext);
     Ok(header)
 }
 
 /// Decrypt the current wallet format or the historical read-only format.
 pub fn decrypt_wallet(encrypted_data: Vec<u8>, password: String) -> Result<String, String> {
+    let password = Zeroizing::new(password);
     if encrypted_data.starts_with(WALLET_MAGIC) {
         decrypt_current_wallet(&encrypted_data, password.as_bytes())
     } else {
@@ -396,8 +398,8 @@ fn decrypt_current_wallet(encrypted_data: &[u8], password: &[u8]) -> Result<Stri
     }
     let salt: [u8; WALLET_SALT_LEN] = encrypted_data[24..40].try_into().unwrap();
     let nonce: [u8; WALLET_NONCE_LEN] = encrypted_data[40..64].try_into().unwrap();
-    let mut key = derive_argon2id_key(password, &salt)?;
-    let cipher = XChaCha20Poly1305::new((&key).into());
+    let key = derive_argon2id_key(password, &salt)?;
+    let cipher = XChaCha20Poly1305::new((&*key).into());
     let nonce = XNonce::from(nonce);
     let plaintext = cipher
         .decrypt(
@@ -408,11 +410,13 @@ fn decrypt_current_wallet(encrypted_data: &[u8], password: &[u8]) -> Result<Stri
             },
         )
         .map_err(|_| "wrong password or corrupted data".to_string());
-    zeroize::Zeroize::zeroize(&mut key);
-    String::from_utf8(plaintext?).map_err(|_| "wallet plaintext is not valid UTF-8".into())
+    wallet_text(plaintext?)
 }
 
-fn derive_argon2id_key(password: &[u8], salt: &[u8; WALLET_SALT_LEN]) -> Result<[u8; 32], String> {
+fn derive_argon2id_key(
+    password: &[u8],
+    salt: &[u8; WALLET_SALT_LEN],
+) -> Result<Zeroizing<[u8; 32]>, String> {
     use argon2::{Algorithm, Argon2, Params, Version};
 
     let params = Params::new(
@@ -422,10 +426,13 @@ fn derive_argon2id_key(password: &[u8], salt: &[u8; WALLET_SALT_LEN]) -> Result<
         Some(32),
     )
     .map_err(|error| format!("invalid wallet KDF parameters: {error}"))?;
-    let password_digest = blake3::derive_key("Hyphen wallet password prehash v1", password);
-    let mut key = [0u8; 32];
+    let password_digest = Zeroizing::new(blake3::derive_key(
+        "Hyphen wallet password prehash v1",
+        password,
+    ));
+    let mut key = Zeroizing::new([0u8; 32]);
     Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
-        .hash_password_into(&password_digest, salt, &mut key)
+        .hash_password_into(password_digest.as_slice(), salt, key.as_mut_slice())
         .map_err(|error| format!("wallet KDF failed: {error}"))?;
     Ok(key)
 }
@@ -443,19 +450,25 @@ fn decrypt_legacy_wallet(encrypted_data: &[u8], password: &[u8]) -> Result<Strin
         .try_into()
         .map_err(|_| "invalid mac")?;
     let ciphertext = &encrypted_data[64..];
-    let mut key = derive_legacy_wallet_key(password, &salt);
+    let key = Zeroizing::new(derive_legacy_wallet_key(password, &salt));
     let computed_mac = crypto::blake3_keyed(&key, ciphertext);
     if computed_mac.as_bytes().ct_eq(&stored_mac).unwrap_u8() != 1 {
-        zeroize::Zeroize::zeroize(&mut key);
         return Err("wrong password or corrupted data".into());
     }
     let plaintext = legacy_xof_encrypt(&key, ciphertext);
-    zeroize::Zeroize::zeroize(&mut key);
-    String::from_utf8(plaintext).map_err(|_| "wallet plaintext is not valid UTF-8".into())
+    wallet_text(plaintext)
+}
+
+fn wallet_text(bytes: Vec<u8>) -> Result<String, String> {
+    String::from_utf8(bytes).map_err(|error| {
+        use zeroize::Zeroize;
+        error.into_bytes().zeroize();
+        "wallet plaintext is not valid UTF-8".into()
+    })
 }
 
 fn derive_legacy_wallet_key(password: &[u8], salt: &[u8; 32]) -> [u8; 32] {
-    let mut state = crypto::blake3_hash(&[salt.as_slice(), password].concat());
+    let mut state = crypto::blake3_hash_many(&[salt, password]);
     for _ in 0..100_000 {
         state = crypto::blake3_hash(state.as_bytes());
     }
@@ -467,11 +480,10 @@ fn legacy_xof_encrypt(key: &[u8; 32], data: &[u8]) -> Vec<u8> {
     let mut h = blake3::Hasher::new_keyed(key);
     h.update(b"Hyphen_wallet_stream");
     let mut stream = h.finalize_xof();
-    let mut keystream = vec![0u8; data.len()];
-    stream.fill(&mut keystream);
     let mut out = vec![0u8; data.len()];
-    for (i, b) in data.iter().enumerate() {
-        out[i] = b ^ keystream[i];
+    stream.fill(&mut out);
+    for (byte, input) in out.iter_mut().zip(data) {
+        *byte ^= input;
     }
     out
 }

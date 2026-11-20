@@ -37,7 +37,7 @@ ed25519-dalek = { version = "3.0.0", features = ["serde", "rand_core"] }
 sha2 = "0.11.1"
 hmac = "0.13.0"
 pbkdf2 = { version = "0.13.0", features = ["hmac"] }
-argon2 = "0.6.0"
+argon2 = { version = "0.6.0", features = ["zeroize"] }
 chacha20poly1305 = "0.11.0"
 subtle = "2.6.1"
 

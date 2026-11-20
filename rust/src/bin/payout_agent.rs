@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -574,9 +574,21 @@ fn write_json(status: StatusCode, payload: &AgentResponse) -> Response<Body> {
     }
 }
 
+fn read_bounded(path: &Path, limit: usize) -> Result<Zeroizing<Vec<u8>>, String> {
+    let mut bytes = Zeroizing::new(Vec::new());
+    let file = std::fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
+    let size = file
+        .take(limit as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    if size > limit {
+        return Err(format!("{} exceeds {limit} bytes", path.display()));
+    }
+    Ok(bytes)
+}
+
 fn load_seed(path: &Path) -> Result<String, String> {
-    let raw =
-        Zeroizing::new(std::fs::read(path).map_err(|error| format!("read seed file: {error}"))?);
+    let raw = read_bounded(path, 4096)?;
     if raw.len() == 64 {
         return Ok(hex::encode(raw.as_slice()));
     }
@@ -596,14 +608,14 @@ fn load_seed(path: &Path) -> Result<String, String> {
 }
 
 fn load_token(path: &Path) -> Result<String, String> {
-    let token = std::fs::read_to_string(path)
-        .map_err(|error| format!("read token file: {error}"))?
-        .trim()
-        .to_owned();
+    let bytes = read_bounded(path, 4096)?;
+    let token = std::str::from_utf8(&bytes)
+        .map_err(|e| format!("invalid token: {e}"))?
+        .trim();
     if token.len() < 32 || token.len() > 256 {
         return Err("token must contain between 32 and 256 characters".into());
     }
-    Ok(token)
+    Ok(token.to_owned())
 }
 
 fn load_state_with_backup(path: &Path) -> Result<AgentState, String> {
@@ -618,7 +630,7 @@ fn load_state_with_backup(path: &Path) -> Result<AgentState, String> {
 }
 
 fn load_state(path: &Path) -> Result<AgentState, String> {
-    let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+    let bytes = read_bounded(path, 64 * 1024 * 1024)?;
     wire_config(64 * 1024 * 1024)
         .deserialize(&bytes)
         .map_err(|error| error.to_string())
@@ -669,14 +681,8 @@ fn validate_recipient(address: &str, network: &str) -> Result<(), String> {
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    let mut difference = left.len() ^ right.len();
-    let max_len = left.len().max(right.len());
-    for index in 0..max_len {
-        let l = left.get(index).copied().unwrap_or(0);
-        let r = right.get(index).copied().unwrap_or(0);
-        difference |= (l ^ r) as usize;
-    }
-    difference == 0
+    use subtle::ConstantTimeEq;
+    left.ct_eq(right).into()
 }
 
 fn parse_args() -> Result<Config, String> {
