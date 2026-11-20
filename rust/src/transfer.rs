@@ -148,6 +148,7 @@ pub struct ScanResult {
     pub total_balance: u64,
     pub output_count: u64,
     pub scanned_height: u64,
+    pub scanned_hash_hex: String,
     pub outputs_json: String,
 }
 
@@ -287,7 +288,39 @@ pub fn scan_wallet_outputs(
         seed_hex,
         account,
         start_height..=end_height,
-        is_mainnet,
+        ScanNetwork::AddressClass { is_mainnet },
+        None,
+    )
+}
+
+pub(crate) enum ScanNetwork {
+    AddressClass { is_mainnet: bool },
+    Exact([u8; 4]),
+}
+
+impl ScanNetwork {
+    fn check(&self, info: &ChainInfoResponse) -> Result<(), String> {
+        match self {
+            Self::AddressClass { is_mainnet } => require_network_class(info, *is_mainnet),
+            Self::Exact(magic) if info.network_magic == *magic => Ok(()),
+            Self::Exact(_) => Err("wallet scan network differs from the expected chain".into()),
+        }
+    }
+}
+
+/// Scan account zero on the offline-payment devnet through the verified RPC connection.
+pub fn scan_reserve_wallet(
+    host: String,
+    port: u16,
+    seed_hex: String,
+) -> Result<ScanResult, String> {
+    scan_outputs_in(
+        host,
+        port,
+        seed_hex,
+        0,
+        0..=u64::MAX,
+        ScanNetwork::Exact(*b"HYOF"),
         None,
     )
 }
@@ -298,7 +331,7 @@ pub(crate) fn scan_outputs_in(
     seed_hex: String,
     account: u32,
     heights: RangeInclusive<u64>,
-    is_mainnet: bool,
+    network: ScanNetwork,
     directory: Option<&Path>,
 ) -> Result<ScanResult, String> {
     let (start_height, end_height) = heights.into_inner();
@@ -309,7 +342,7 @@ pub(crate) fn scan_outputs_in(
 
     let mut client = RpcClient::connect(&host, port)?;
     let info = verified_chain_info(&mut client)?;
-    require_network_class(&info, is_mainnet)?;
+    network.check(&info)?;
     let end_height = end_height.min(info.height);
     if start_height > end_height {
         return Err(format!(
@@ -468,10 +501,18 @@ pub(crate) fn scan_outputs_in(
     let outputs_json =
         serde_json::to_string(&owned_outputs).map_err(|e| format!("serialize outputs: {e}"))?;
 
+    // A reorganization may have removed the scanned anchor while processing its outputs.
+    if client.get_block_by_height(end_height)?.hash != anchor {
+        return Err(format!(
+            "chain changed during wallet scan at height {end_height}"
+        ));
+    }
+
     Ok(ScanResult {
         total_balance,
         output_count,
         scanned_height: end_height,
+        scanned_hash_hex: hex::encode(anchor),
         outputs_json,
     })
 }
@@ -549,7 +590,7 @@ fn verify_reward_output(
     {
         return Err("invalid reward metadata".into());
     }
-    if info.network_magic == b"HYCD"
+    if matches!(info.network_magic.as_slice(), b"HYCD" | b"HYAC" | b"HYOF")
         && header.extra_nonce
             != *hyphen_crypto::blake3_hash_many(&[
                 b"Hyphen/reward-recipient/v1",
@@ -639,6 +680,13 @@ pub fn build_and_send_transaction(request: TransactionRequest) -> Result<SendRes
 /// Callers that need crash-safe delivery must persist the returned value
 /// before calling [`submit_built_transaction`].
 pub fn build_transaction(request: TransactionRequest) -> Result<BuiltTransaction, String> {
+    build_transaction_for_network(request, None)
+}
+
+pub fn build_transaction_for_network(
+    request: TransactionRequest,
+    expected_magic: Option<[u8; 4]>,
+) -> Result<BuiltTransaction, String> {
     let TransactionRequest {
         host,
         port,
@@ -695,6 +743,9 @@ pub fn build_transaction(request: TransactionRequest) -> Result<BuiltTransaction
     // Get chain info for total output count (needed for decoys); this also
     // pins the node to a known chain and rejects a cross-network recipient.
     let chain_info = verified_chain_info(&mut client)?;
+    if expected_magic.is_some_and(|magic| chain_info.network_magic != magic) {
+        return Err("funding network differs from the expected chain".into());
+    }
     let node_is_mainnet = magic_is_mainnet(&chain_info.network_magic);
     if dest_addr.is_mainnet() != node_is_mainnet {
         return Err(format!(
@@ -782,6 +833,15 @@ pub fn submit_built_transaction(
     port: u16,
     built: BuiltTransaction,
 ) -> Result<SendResult, String> {
+    submit_transaction_for_network(host, port, built, None)
+}
+
+pub fn submit_transaction_for_network(
+    host: String,
+    port: u16,
+    built: BuiltTransaction,
+    expected_magic: Option<[u8; 4]>,
+) -> Result<SendResult, String> {
     let actual_hash = hex::encode(hyphen_crypto::blake3_hash(&built.tx_data).as_bytes());
     if actual_hash != built.tx_hash_hex {
         return Err("persisted transaction hash does not match its signed bytes".into());
@@ -792,6 +852,11 @@ pub fn submit_built_transaction(
         .map_err(|error| format!("persisted transaction is malformed: {error}"))?;
 
     let mut client = RpcClient::connect(&host, port)?;
+    if let Some(magic) = expected_magic
+        && verified_chain_info(&mut client)?.network_magic != magic
+    {
+        return Err("submission network differs from the expected chain".into());
+    }
     let resp = client.submit_transaction(built.tx_data)?;
     if resp.accepted && resp.tx_hash.as_slice() != expected_hash.as_slice() {
         return Err("node accepted transaction under an unexpected hash".into());
@@ -821,6 +886,15 @@ pub fn transaction_status(
     port: u16,
     tx_hash_hex: &str,
 ) -> Result<TransactionStatus, String> {
+    transaction_status_for_network(host, port, tx_hash_hex, None)
+}
+
+pub fn transaction_status_for_network(
+    host: String,
+    port: u16,
+    tx_hash_hex: &str,
+    expected_magic: Option<[u8; 4]>,
+) -> Result<TransactionStatus, String> {
     let tx_hash = hex::decode(tx_hash_hex)
         .map_err(|error| format!("invalid transaction hash hex: {error}"))?;
     if tx_hash.len() != 32 {
@@ -831,6 +905,9 @@ pub fn transaction_status(
     }
 
     let mut client = RpcClient::connect(&host, port)?;
+    if let Some(magic) = expected_magic {
+        ScanNetwork::Exact(magic).check(&verified_chain_info(&mut client)?)?;
+    }
     let location = client.get_tx_location(tx_hash.clone())?;
     if location.found {
         if location.block_hash.len() != 32 {
@@ -1081,7 +1158,11 @@ struct VreParams {
 fn vre_params_for_network(network: &str, chain_height: u64, total_outputs: u64) -> VreParams {
     if matches!(
         network,
-        "hyphen-devnet-v2" | "hyphen-contract-devnet-v1" | "hyphen-neural-devnet-v1"
+        "hyphen-devnet-v2"
+            | "hyphen-contract-devnet-v1"
+            | "hyphen-neural-devnet-v1"
+            | "hyphen-compute-devnet-v1"
+            | "hyphen-offline-devnet-v1"
     ) {
         return VreParams {
             min_ring_span: 0,

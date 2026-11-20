@@ -503,6 +503,7 @@ pub struct WalletScanResult {
     pub total_balance: u64,
     pub output_count: u64,
     pub scanned_height: u64,
+    pub scanned_hash_hex: String,
     pub outputs_json: String,
 }
 
@@ -546,13 +547,14 @@ pub fn scan_wallet_outputs(
         seed_hex,
         account,
         start_height..=end_height,
-        is_mainnet,
+        crate::transfer::ScanNetwork::AddressClass { is_mainnet },
         cache_directory.as_deref().map(std::path::Path::new),
     )?;
     Ok(WalletScanResult {
         total_balance: result.total_balance,
         output_count: result.output_count,
         scanned_height: result.scanned_height,
+        scanned_hash_hex: result.scanned_hash_hex,
         outputs_json: result.outputs_json,
     })
 }

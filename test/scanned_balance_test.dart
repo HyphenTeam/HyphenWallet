@@ -1,0 +1,118 @@
+
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hyphen_wallet/l10n/app_localizations.dart';
+import 'package:hyphen_wallet/screens/home_screen.dart';
+import 'package:hyphen_wallet/services/wallet_service.dart';
+import 'package:hyphen_wallet/src/rust/api/wallet.dart';
+import 'package:hyphen_wallet/src/rust/frb_generated.dart';
+import 'package:provider/provider.dart';
+
+class _ScanApi extends Fake implements RustLibApi {
+  bool offline = false;
+
+  @override
+  Future<String> crateApiWalletPqTransformPassword({
+    required String password,
+  }) async => password;
+
+  @override
+  Future<Uint8List> crateApiWalletEncryptWallet({
+    required String mnemonic,
+    required String password,
+  }) async => Uint8List(1);
+
+  @override
+  Future<WalletCreateResult> crateApiWalletRestoreWallet({
+    required String mnemonic,
+    required String passphrase,
+  }) async => WalletCreateResult(
+    mnemonic: mnemonic,
+    seedHex: '01',
+    addressMainnet: '',
+    addressTestnet: '',
+    viewPublicHex: '',
+    spendPublicHex: '',
+  );
+
+  @override
+  Future<WalletScanResult> crateApiWalletScanWalletOutputs({
+    required String host,
+    required int port,
+    required String seedHex,
+    required int account,
+    required BigInt startHeight,
+    required BigInt endHeight,
+    required bool isMainnet,
+    String? cacheDirectory,
+  }) async {
+    if (offline) throw StateError('disconnected');
+    return WalletScanResult(
+      totalBalance: BigInt.one,
+      outputCount: BigInt.one,
+      scannedHeight: BigInt.one,
+      scannedHashHex: 'a' * 64,
+      outputsJson:
+          '[{"value":1,"received_tx_hash":"transfer","block_height":1}]',
+    );
+  }
+}
+
+class _MiningWallet extends WalletService {
+  @override
+  WalletState get state =>
+      super.state.copyWith(pendingPoolRewardsAtomic: '99000000000000');
+}
+
+void main() {
+  testWidgets(
+    'home and receipts use only the successful scan for the active wallet',
+    (tester) async {
+      final api = _ScanApi();
+      RustLib.initMock(api: api);
+      FlutterSecureStorage.setMockInitialValues({});
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (call) async => '.',
+      );
+      final wallet = _MiningWallet();
+      addTearDown(wallet.dispose);
+      await wallet.restoreWallet('fixture', 'fixture');
+      await tester.pumpWidget(
+        ChangeNotifierProvider<WalletService>.value(
+          value: wallet,
+          child: const MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            home: HomeScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('— HPN'), findsOneWidget);
+      await wallet.scanWalletOutputs();
+      await tester.pump();
+      expect(find.text('0.000000000001 HPN'), findsOneWidget);
+      expect(wallet.lastReceipt?.amount, BigInt.one);
+      const storage = FlutterSecureStorage();
+      final outputKey = (await storage.readAll()).keys.singleWhere(
+        (key) => key.startsWith('owned_outputs_v2_'),
+      );
+      await storage.write(key: outputKey, value: '[{"value":900000000000000}]');
+      expect(await wallet.getSpendableBalance(), BigInt.one);
+      api.offline = true;
+      await wallet.refreshAll();
+      await tester.pump();
+      expect(find.text('— HPN'), findsOneWidget);
+      expect(wallet.lastReceipt, isNull);
+      expect(wallet.state.syncError, contains('disconnected'));
+      api.offline = false;
+      await wallet.refreshAll();
+      expect(wallet.lastReceipt?.hash, 'transfer');
+      wallet.lock();
+      expect(wallet.scannedBalance, isNull);
+      expect(wallet.lastReceipt, isNull);
+    },
+  );
+}

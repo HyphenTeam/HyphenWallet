@@ -15,6 +15,8 @@ flutter run -d windows
 
 Back up the recovery phrase offline and configure the node's binary RPC endpoint in the wallet. [Wallet operations and payout agent](wiki/Operations.md) · [Hyphen node](https://github.com/HyphenTeam/Hyphen)
 
+Build `hyphen-disclose` with `cargo build --release --locked --manifest-path rust/Cargo.toml --bin hyphen-disclose` to issue a scoped ownership and amount proof for one exported output. [Single-output disclosure](wiki/Operations.md#single-output-disclosure)
+
 ## License
 
 The project's own code is licensed under the [PolyForm Strict License 1.0.0](LICENSE). Third-party components and fonts retain their respective terms.

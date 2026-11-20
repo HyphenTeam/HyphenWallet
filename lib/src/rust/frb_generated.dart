@@ -1221,13 +1221,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletScanResult dco_decode_wallet_scan_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return WalletScanResult(
       totalBalance: dco_decode_u_64(arr[0]),
       outputCount: dco_decode_u_64(arr[1]),
       scannedHeight: dco_decode_u_64(arr[2]),
-      outputsJson: dco_decode_String(arr[3]),
+      scannedHashHex: dco_decode_String(arr[3]),
+      outputsJson: dco_decode_String(arr[4]),
     );
   }
 
@@ -1393,11 +1394,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_totalBalance = sse_decode_u_64(deserializer);
     var var_outputCount = sse_decode_u_64(deserializer);
     var var_scannedHeight = sse_decode_u_64(deserializer);
+    var var_scannedHashHex = sse_decode_String(deserializer);
     var var_outputsJson = sse_decode_String(deserializer);
     return WalletScanResult(
       totalBalance: var_totalBalance,
       outputCount: var_outputCount,
       scannedHeight: var_scannedHeight,
+      scannedHashHex: var_scannedHashHex,
       outputsJson: var_outputsJson,
     );
   }
@@ -1548,6 +1551,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.totalBalance, serializer);
     sse_encode_u_64(self.outputCount, serializer);
     sse_encode_u_64(self.scannedHeight, serializer);
+    sse_encode_String(self.scannedHashHex, serializer);
     sse_encode_String(self.outputsJson, serializer);
   }
 

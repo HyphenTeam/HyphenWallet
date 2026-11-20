@@ -10,13 +10,33 @@ Select the correct network and connect to a trusted node's binary RPC endpoint. 
 
 After sending, use the transaction hash to check canonical inclusion and rescan for change. RPC admission places a transaction in the mempool. A restored wallet may take time to rebuild its balance as it reads the chain. A remote node supplies the canonical history used for the scan.
 
-Upgrade the node before upgrading scanning clients. For a rewarded block, binary RPC must return the miner's `block_authorization` in field 6. The scanner verifies the signature and reconstructs the output from the recipient keys and `header.reward`. On `contract-devnet` it also checks that `header.extra_nonce` commits to the two authorized recipient keys. Historical v5 profiles lack that header commitment. For ordinary payments the wallet checks the reported block, position and transaction root. Confirmation depth comes from that node's reported tip.
+Upgrade the node before upgrading scanning clients. For a rewarded block, binary RPC must return the miner's `block_authorization` in field 6. The scanner verifies the signature and reconstructs the output from the recipient keys and `header.reward`. On `contract-devnet`, `compute-devnet` and `offline-devnet` it also checks that `header.extra_nonce` commits to the two authorized recipient keys. Historical v5 profiles lack that header commitment. For ordinary payments the wallet checks the reported block, position and transaction root. Confirmation depth comes from that node's reported tip.
 
 While unlocked, the wallet checks the tip hash every five seconds and rescans after a change. Receive shows the latest incoming payment with unspent outputs, its remaining amount and confirmations. A reorganization can remove the receipt and reduce the balance. In the local PPLNS test, the receipt disappeared after height 16 was replaced and returned when the same transaction confirmed at height 22. Sender change is excluded.
 
 Upgrading the app removes legacy output caches and the shared biometric credential. Rescan to rebuild spendable outputs. New caches contain amounts and output derivation data. The unlocked wallet derives the one-time spending key when signing. Biometric unlock uses a wallet-specific credential after password unlock with biometrics enabled. The payment form accepts at most 12 decimal places and retains the exact atomic amount through signing.
 
 The experimental WOTS message-signing entry point now returns an error. Its previous interface could select the same one-time key for multiple messages. The corrected verifier uses the complete three-digit checksum, so a historical experimental signature can fail verification. Ordinary payments use CLSAG. The historical password transform uses the WOTS public key and preserves its previous derivation.
+
+## Conditional offline payments
+
+The home balance comes from a successful output scan for the active wallet and RPC endpoint. It displays all twelve decimal places. When the node reports a changed tip, or synchronization fails, the wallet hides the previous balance and incoming receipt until it completes a scan. Mining totals and pending pool rewards appear in the rewards panel. For an offline order, keep your signed invoice and check the canonical payment with `hyphen-offline confirm OWN_NODE_DB PACKET INVOICE OWN_ADDRESS NET --min-confirmations N` after synchronizing and stopping your own node.
+
+首页余额取自当前钱包在所选节点上的成功扫描，显示完整十二位小数。发现链顶变化或同步失败时，钱包暂时隐藏余额和上次入款，重扫成功后恢复。累计挖矿奖励和矿池待付款在奖励栏单列。双离线订单请保留自己签发的请求，待自己的节点同步并停止后，用上面的 `confirm` 命令核对该笔兑付。
+
+For whole-reserve payments on `offline-devnet`, `hyphen-reserve-wallet prepare` saves the ordinary signed funding transaction. `submit` relays that file and `balance` scans the resulting canonical wallet outputs. The node repository's `hyphen-offline` signer verifies a local checkpoint and the recipient's request before a conditional receipt is recorded. Back up the latest signed delivery alongside the funding terms. The Flutter NFC screen exchanges receiving addresses. [Offline payment commands and recovery](https://github.com/HyphenTeam/Hyphen/blob/main/wiki/Offline-Payments.md)
+
+## Single-output disclosure
+
+On a stopped, synchronized node, export the public transaction and its current output position. On the wallet host, run `hyphen-disclose` with the intended auditor public key, scope digest and expiry as Unix seconds. Its standard input takes the raw 64-byte BIP39 seed from the unlocked wallet. The default account, change and address index are all zero. Supply the three numbers after the expiry for another address. These POSIX shell commands use binary stdin redirection and UTF-8 JSON files.
+
+```sh
+hyphen-audit --network "$NETWORK" --data-dir "$NODE_DB" --export-output "$GLOBAL_INDEX" > output.json
+hyphen-disclose output.json "$AUDITOR_HEX" "$SCOPE_HEX" "$EXPIRES_UNIX" < "$RAW_SEED_FILE" > disclosure.json
+hyphen-audit --network "$NETWORK" --data-dir "$NODE_DB" --disclosure disclosure.json --auditor "$AUDITOR_HEX" --scope "$SCOPE_HEX"
+```
+
+The recipient verifies against their own node's current branch and clock. The JSON reveals the amount, blinding and transaction location to everyone who receives it. The auditor and scope are bound to the Schnorr proof. Deliver the file through a confidential channel.
 
 ## Shared pool payout agent
 
@@ -32,6 +52,17 @@ The agent exposes authenticated `/v1/health`, `/v1/submit` and `/v1/status` rout
 One agent holds the state-directory lock for its lifetime. It replaces the saved state atomically from a temporary file in the same directory. If the old main file is absent at upgrade, the agent can recover the previous `.bak`. A corrupt main file produces a startup error. Stop the agent before copying its state for backup.
 
 ## Builds and compatibility
+
+The HYOF receipt candidate uses wallet commit `ba84c48231e57243ce5b583e4fe2a392163eaa34` and shared consensus commit `f78878eb53e2966ac10aaf51a272e57cf1e757b9`. The Windows desktop distribution requires the executable, its DLLs and the `data` directory together. Its native bridge verified the canonical payout and scan anchor against the recipient's running local node. The Android ARM64 APK passed APK Signature Scheme v2 verification with the local Android Debug certificate. Both applications contain the four font files from the frozen source. Physical-device NFC, secure storage and hardware signing still need acceptance testing.
+
+| Receipt candidate / 收款核验候选 | SHA-256 |
+| --- | --- |
+| Windows x64 `hyphen_wallet.exe` | `3af3e29355ecc7d8d92ba8fdae3e5824845ffe8ead44ed7a19211c3db2846361` |
+| Windows x64 `rust_lib_hyphen_wallet.dll` | `c6cd90fa5f234ea323d60ec042ebffffb71eb5b89a43a0b0ce5c94e3d3217e30` |
+| Windows `data/app.so` | `59092b44b731901c169a631972ad945ad9da86e849306b6ca5d6afbaf8ed9c90` |
+| Android ARM64 `hyphen-wallet-arm64.apk` | `69dc0af8894fc421482930ef1b0fa0ed5a5ca55c6aec0356eea2215a0c11aebd` |
+
+桌面版启动时需要保留同一目录下的动态库和 `data`。此次开发网实测逐项核对实际到账交易、净额和扫描链顶。Android 包采用调试证书，真机 NFC、硬件签名和安全存储仍待验收。下表保留较早的收款界面构建记录。
 
 | Local release build with the receive view | SHA-256 |
 | --- | --- |
@@ -50,6 +81,8 @@ Google Sans includes the authors' license. The wallet bundles three static Harmo
 
 ## 中文说明
 
+在 `offline-devnet` 上，可用 `hyphen-reserve-wallet prepare` 保存普通预锁付款，再用 `submit` 提交原文件。`balance` 扫描规范链余额。离线工具 `hyphen-offline` 使用收款人自己的检查点和签名请求核验交付；请备份最后收到的签名凭证及原始条款。Flutter 的 NFC 收款入口目前传递收款地址。[双离线操作与恢复](https://github.com/HyphenTeam/Hyphen/blob/main/wiki/Offline-Payments.md)
+
 钱包中的三款 HarmonyOS Sans SC 静态字重标记为 2.400 版。华为旧版下载包含 1.0 版静态字体，当前下载包含单个 SC 字体，两者均与钱包清单的三个哈希不同。发布仍需核对这三份原文件的来源、适用授权及软件内的声明要求。[字体清单](../assets/fonts/manifest.json) · [华为设计资源](https://developer.huawei.com/consumer/cn/design/resource)
 
 本地备选 Regular、Medium、Bold 文件逐字节匹配旧版 `HarmonyOS-Sans.zip` 中的同名字重。该包的 SHA-256 为 `fb02c86e358cd9aad8d4dfa957ee502381e7ee2e94499a9133add4324b6ce69a`，也与已核对的华为旧版包一致。钱包静态 2.400 的来源仍待确认。
@@ -60,8 +93,10 @@ Google Sans includes the authors' license. The wallet bundles three static Harmo
 
 选择正确的网络，连接可信节点的二进制 RPC。钱包核对网络标识、创世哈希、共识参数哈希和协议版本，从创世块开始验证祖先与交易根，重建全局输出索引并核对已花费输入。指定较晚的输出起始高度时，仍会检查之前发生的花费。大型扫描可把公开的 key image 临时写入应用缓存目录。发送后按交易哈希查链上确认，再重扫找零。
 
-先升级节点，再升级钱包。扫描奖励时，钱包验证矿工授权并重算收款输出。合约开发网还核对块头 `extra_nonce` 中的两把奖励收款公钥承诺。历史网络沿用各自的 v5 规则。普通付款会核对块内位置与交易根，确认深度依赖所连节点的链顶。解锁后每五秒检查链顶哈希，变化时重扫。收款页显示最近一笔仍有未花输出的普通收款及其剩余金额和确认数，排除找零。分叉时收款可能撤销，同一交易重新确认后恢复。升级会清理旧输出缓存和全局生物识别凭据，启用生物识别后用原密码解锁可建立该钱包专属凭据。
+先升级节点，再升级钱包。扫描奖励时，钱包验证矿工授权并重算收款输出。合约、计算和双离线开发网还核对块头 `extra_nonce` 中的两把奖励收款公钥承诺。历史网络沿用各自的 v5 规则。普通付款会核对块内位置与交易根，确认深度依赖所连节点的链顶。解锁后每五秒检查链顶哈希，变化时重扫。收款页显示最近一笔仍有未花输出的普通收款及其剩余金额和确认数，排除找零。分叉时收款可能撤销，同一交易重新确认后恢复。升级会清理旧输出缓存和全局生物识别凭据，启用生物识别后用原密码解锁可建立该钱包专属凭据。
 
 发送金额最多保留 12 位小数，确认和签名使用同一笔整数金额。实验性 WOTS 消息签名入口已停用，校验和修正后，部分旧消息签名可能无法通过验证。日常付款采用 CLSAG，历史密码变换只使用 WOTS 公钥。
+
+单输出披露使用上面的三条命令。在已同步并停止的节点上导出指定全局索引的交易，钱包端通过标准输入向 `hyphen-disclose` 传入解锁后的原始 64 字节 BIP39 种子，并指定审计方公钥、范围摘要和到期 Unix 时间。账户、找零分支和地址索引默认均为零，可在到期时间后显式指定。接收者在自己的节点上核对当前规范链位置与有效期。披露文件明文包含金额、盲因子和输出位置，应通过保密渠道传递。
 
 共享矿池使用上面的命令在回环地址运行独立付款代理，为矿池单独准备种子、令牌与持久化状态目录。矿池按意图编号预留余额，代理先持久化签名交易再提交；同一意图重试会复用同一笔交易。重启时保留三者。依赖或桥接层升级后，应运行上列检查，并在开发网上核对一次完整付款。

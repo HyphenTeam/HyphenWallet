@@ -769,6 +769,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyphen-wallet"
+version = "0.1.1"
+source = "git+https://github.com/HyphenTeam/Hyphen.git?rev=951ea013f0b61115632f463cea22850cd972df83#951ea013f0b61115632f463cea22850cd972df83"
+dependencies = [
+ "blake3",
+ "curve25519-dalek",
+ "getrandom 0.4.3",
+ "hyphen-crypto",
+ "hyphen-proof",
+ "hyphen-tx",
+ "hyphen-wire",
+ "rand",
+ "rand_core 0.10.1",
+ "rustbinary",
+ "serde",
+ "thiserror",
+ "zeroize",
+]
+
+[[package]]
 name = "hyphen-wire"
 version = "0.1.1"
 source = "git+https://github.com/HyphenTeam/Hyphen.git?rev=951ea013f0b61115632f463cea22850cd972df83#951ea013f0b61115632f463cea22850cd972df83"
@@ -1178,6 +1198,7 @@ dependencies = [
  "hyphen-crypto",
  "hyphen-proof",
  "hyphen-tx",
+ "hyphen-wallet",
  "hyphen-wire",
  "once_cell",
  "pbkdf2",

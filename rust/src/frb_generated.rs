@@ -1093,11 +1093,13 @@ impl SseDecode for crate::api::wallet::WalletScanResult {
         let mut var_totalBalance = <u64>::sse_decode(deserializer);
         let mut var_outputCount = <u64>::sse_decode(deserializer);
         let mut var_scannedHeight = <u64>::sse_decode(deserializer);
+        let mut var_scannedHashHex = <String>::sse_decode(deserializer);
         let mut var_outputsJson = <String>::sse_decode(deserializer);
         return crate::api::wallet::WalletScanResult {
             total_balance: var_totalBalance,
             output_count: var_outputCount,
             scanned_height: var_scannedHeight,
+            scanned_hash_hex: var_scannedHashHex,
             outputs_json: var_outputsJson,
         };
     }
@@ -1306,6 +1308,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::WalletScanResult {
             self.total_balance.into_into_dart().into_dart(),
             self.output_count.into_into_dart().into_dart(),
             self.scanned_height.into_into_dart().into_dart(),
+            self.scanned_hash_hex.into_into_dart().into_dart(),
             self.outputs_json.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -1450,6 +1453,7 @@ impl SseEncode for crate::api::wallet::WalletScanResult {
         <u64>::sse_encode(self.total_balance, serializer);
         <u64>::sse_encode(self.output_count, serializer);
         <u64>::sse_encode(self.scanned_height, serializer);
+        <String>::sse_encode(self.scanned_hash_hex, serializer);
         <String>::sse_encode(self.outputs_json, serializer);
     }
 }

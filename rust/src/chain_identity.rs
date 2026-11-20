@@ -18,7 +18,7 @@ pub struct ChainIdentity {
     pub genesis_hash: &'static str,
 }
 
-pub const CHAIN_IDENTITIES: [ChainIdentity; 5] = [
+pub const CHAIN_IDENTITIES: [ChainIdentity; 7] = [
     ChainIdentity {
         network: "hyphen-devnet-v2",
         network_magic: *b"HYDV",
@@ -36,6 +36,18 @@ pub const CHAIN_IDENTITIES: [ChainIdentity; 5] = [
         network_magic: *b"HYCD",
         consensus_params_hash: "3ad32be8f0c772331740a74ebcd56266ad97da58bdda076e9e139d31499910b2",
         genesis_hash: "422475c11a829f198cc502ca4f5cd4489336569997c3cdf048dddaf1d71f1b33",
+    },
+    ChainIdentity {
+        network: "hyphen-offline-devnet-v1",
+        network_magic: *b"HYOF",
+        consensus_params_hash: "abcc133c433575b338b6a38f3522cd2602f2b08c28f970c7c4fbd08280e28bae",
+        genesis_hash: "2c80d0881102a4e2d4a080bca8b08d2726b303f5877a8c585eb315eae49f9aa5",
+    },
+    ChainIdentity {
+        network: "hyphen-compute-devnet-v1",
+        network_magic: *b"HYAC",
+        consensus_params_hash: "8cb229414e48614e7c1e5c47bb819de2974af9735747e0f2d7728b91ededa2e9",
+        genesis_hash: "381fa56cec297fad0d25563a8c0a14fa1fd226b143f3d1ec198b897aeac339bb",
     },
     ChainIdentity {
         network: "hyphen-testnet",

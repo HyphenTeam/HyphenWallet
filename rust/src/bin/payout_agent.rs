@@ -151,7 +151,13 @@ impl Agent {
         }
         if !matches!(
             config.network.as_str(),
-            "mainnet" | "testnet" | "devnet" | "contract-devnet" | "neural-devnet"
+            "mainnet"
+                | "testnet"
+                | "devnet"
+                | "contract-devnet"
+                | "neural-devnet"
+                | "compute-devnet"
+                | "offline-devnet"
         ) {
             return Err("unsupported payout network".into());
         }

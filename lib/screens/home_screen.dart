@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
@@ -8,6 +6,7 @@ import '../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 
 import '../services/wallet_service.dart';
+import '../services/payment_amount.dart';
 import '../theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -197,7 +196,11 @@ class _HomeTab extends StatelessWidget {
                     position: balanceSlide,
                     child: FadeTransition(
                       opacity: balanceFade,
-                      child: _BalanceHero(state: state, l10n: l10n),
+                      child: _BalanceHero(
+                        state: state,
+                        l10n: l10n,
+                        balance: wallet.scannedBalance,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -306,19 +309,16 @@ class _SyncErrorBanner extends StatelessWidget {
 class _BalanceHero extends StatelessWidget {
   final WalletState state;
   final AppLocalizations l10n;
+  final BigInt? balance;
 
-  const _BalanceHero({required this.state, required this.l10n});
+  const _BalanceHero({
+    required this.state,
+    required this.l10n,
+    required this.balance,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final onChain = BigInt.tryParse(state.onChainBalanceAtomic) ?? BigInt.zero;
-    final miningTotal = _sumAtomic([
-      state.minedRewardsAtomic,
-      state.pendingPoolRewardsAtomic,
-      state.poolCoinbaseRewardsAtomic,
-    ]);
-    final total = onChain > miningTotal ? onChain : miningTotal;
-    final parts = _splitAtomic(total);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -384,39 +384,19 @@ class _BalanceHero extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                parts.$1,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 36,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1,
-                  height: 1,
-                ),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              balance == null ? '— HPN' : formatPaymentAmount(balance!),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 36,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1,
+                height: 1,
               ),
-              Text(
-                '.${parts.$2}',
-                style: TextStyle(
-                  color: Colors.white.withAlpha(140),
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'HPN',
-                style: TextStyle(
-                  color: HyphenColors.brightGreen.withAlpha(200),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+            ),
           ),
           const SizedBox(height: 6),
           Text(
@@ -1058,22 +1038,6 @@ class _ActivityListItem extends StatelessWidget {
       ),
     );
   }
-}
-
-BigInt _sumAtomic(List<String> values) {
-  var total = BigInt.zero;
-  for (final v in values) {
-    total += BigInt.tryParse(v) ?? BigInt.zero;
-  }
-  return total;
-}
-
-(String, String) _splitAtomic(BigInt atomic) {
-  const d = 12;
-  final divisor = BigInt.from(10).pow(d);
-  final whole = (atomic ~/ divisor).toString();
-  final frac = (atomic % divisor).abs().toString().padLeft(d, '0');
-  return (whole, frac.substring(0, math.min(4, frac.length)));
 }
 
 String _formatAtomic(String s) {

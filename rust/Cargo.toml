@@ -1,5 +1,6 @@
 [package]
 name = "rust_lib_hyphen_wallet"
+default-run = "hyphen-payout-agent"
 version = "0.1.2"
 edition = "2024"
 authors = ["Hyphen Contributors"]
@@ -21,6 +22,7 @@ rustbinary = { version = "0.1.10", features = ["derive"] }
 hyphen-crypto = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "951ea013f0b61115632f463cea22850cd972df83" }
 hyphen-core = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "951ea013f0b61115632f463cea22850cd972df83" }
 hyphen-tx = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "951ea013f0b61115632f463cea22850cd972df83" }
+hyphen-wallet = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "951ea013f0b61115632f463cea22850cd972df83" }
 hyphen-proof = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "951ea013f0b61115632f463cea22850cd972df83" }
 hyphen-wire = { git = "https://github.com/HyphenTeam/Hyphen.git", rev = "951ea013f0b61115632f463cea22850cd972df83" }
 

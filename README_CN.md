@@ -15,6 +15,8 @@ flutter run -d windows
 
 离线备份助记词，并在钱包中填写节点的二进制 RPC 地址。[钱包使用与付款代理](wiki/Operations.md) · [Hyphen 节点](https://github.com/HyphenTeam/Hyphen)
 
+运行 `cargo build --release --locked --manifest-path rust/Cargo.toml --bin hyphen-disclose` 可构建单输出披露工具，在钱包端为指定交易输出生成限定审计方和范围的金额开封与所有权证明。[单输出披露](wiki/Operations.md#single-output-disclosure)
+
 ## 许可证
 
 项目自身代码采用 [PolyForm Strict License 1.0.0](LICENSE)。第三方组件和字体适用各自的许可条款。

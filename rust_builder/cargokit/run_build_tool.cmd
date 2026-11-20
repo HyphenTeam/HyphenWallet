@@ -1,6 +1,10 @@
 @echo off
 setlocal
 
+REM Cargo may link the library and CLI targets concurrently. In linker mode
+REM Gradle has already resolved the NDK compiler and Android API target.
+if defined _CARGOKIT_NDK_LINK_TARGET goto android_link
+
 setlocal ENABLEDELAYEDEXPANSION
 
 SET BASEDIR=%~dp0
@@ -94,3 +98,7 @@ exit /b %ERRORLEVEL%
 
 :failed
 exit /b 1
+
+:android_link
+"%_CARGOKIT_NDK_LINK_CLANG%" "%_CARGOKIT_NDK_LINK_TARGET%" %*
+exit /b %ERRORLEVEL%

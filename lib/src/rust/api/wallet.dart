@@ -49,9 +49,8 @@ Future<WalletCreateResult> createWalletWithPassword({
 
 /// Restore a wallet from an existing BIP39 mnemonic.
 ///
-/// `passphrase` is the optional BIP39 passphrase (empty string if not used).
-/// If a password was used during creation, it must be the same password here —
-/// it will be transformed through the same historical algorithm.
+/// Pass the original passphrase bytes. Flutter passes the result of
+/// `pq_transform_password`. `restore_wallet_with_password` accepts the original password.
 Future<WalletCreateResult> restoreWallet({
   required String mnemonic,
   required String passphrase,
@@ -131,10 +130,7 @@ Future<String> mnemonicToSeedHex({
   passphrase: passphrase,
 );
 
-/// Sign a message with the experimental Ed25519 + WOTS encoding.
-///
-/// The WOTS public key is not anchored by chain consensus or a persistent
-/// identity registry, and this stateless API cannot enforce one-time use.
+/// Retained for bridge compatibility. The stateless WOTS signer is disabled.
 Future<SignResult> signMessage({
   required String seedHex,
   required int account,
@@ -439,12 +435,14 @@ class WalletScanResult {
   final BigInt totalBalance;
   final BigInt outputCount;
   final BigInt scannedHeight;
+  final String scannedHashHex;
   final String outputsJson;
 
   const WalletScanResult({
     required this.totalBalance,
     required this.outputCount,
     required this.scannedHeight,
+    required this.scannedHashHex,
     required this.outputsJson,
   });
 
@@ -453,6 +451,7 @@ class WalletScanResult {
       totalBalance.hashCode ^
       outputCount.hashCode ^
       scannedHeight.hashCode ^
+      scannedHashHex.hashCode ^
       outputsJson.hashCode;
 
   @override
@@ -463,5 +462,6 @@ class WalletScanResult {
           totalBalance == other.totalBalance &&
           outputCount == other.outputCount &&
           scannedHeight == other.scannedHeight &&
+          scannedHashHex == other.scannedHashHex &&
           outputsJson == other.outputsJson;
 }

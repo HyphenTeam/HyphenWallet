@@ -384,11 +384,20 @@ class WalletService extends ChangeNotifier {
   Locale? get locale => _locale;
   Timer? _minedRewardsTimer;
   Timer? _paymentTimer;
-  (int, String, String)? _polledTip;
-  (int, String)? _receiptSession;
+  (int, String, String)? _scannedTip;
+  BigInt? get scannedBalance {
+    final tip = _scannedTip;
+    if (tip == null ||
+        paymentSession != (tip.$1, tip.$2) ||
+        _state.syncError.isNotEmpty) {
+      return null;
+    }
+    return BigInt.parse(_state.onChainBalanceAtomic);
+  }
+
   ({String hash, BigInt amount, BigInt confirmations})? _lastReceipt;
   ({String hash, BigInt amount, BigInt confirmations})? get lastReceipt =>
-      paymentSession == _receiptSession ? _lastReceipt : null;
+      scannedBalance == null ? null : _lastReceipt;
   int _themeColorIndex = 0;
   int get themeColorIndex => _themeColorIndex;
   bool _biometricEnabled = false;
@@ -885,67 +894,49 @@ class WalletService extends ChangeNotifier {
     final isMainnet = _state.network == HyphenNetwork.mainnet;
     final session = paymentSession;
     await _outputs.run(() async {
-      if (paymentSession != session) return;
-      final result = await rust.scanWalletOutputs(
-        host: host,
-        port: port,
-        seedHex: seed,
-        account: 0,
-        startHeight: BigInt.zero,
-        endHeight: (BigInt.one << 64) - BigInt.one,
-        isMainnet: isMainnet,
-        cacheDirectory: (await getTemporaryDirectory()).path,
-      );
-      if (paymentSession != session) return;
-      await _storage.write(key: key, value: result.outputsJson);
-      if (paymentSession != session) return;
-      _receiptSession = session;
-      _lastReceipt = latestUnspentReceipt(
-        result.outputsJson,
-        result.scannedHeight,
-      );
-      _state = _state.copyWith(
-        onChainBalanceAtomic: result.totalBalance.toString(),
-        syncError: '',
-      );
-      notifyListeners();
+      if (session == null || paymentSession != session) return;
+      try {
+        final result = await rust.scanWalletOutputs(
+          host: host,
+          port: port,
+          seedHex: seed,
+          account: 0,
+          startHeight: BigInt.zero,
+          endHeight: (BigInt.one << 64) - BigInt.one,
+          isMainnet: isMainnet,
+          cacheDirectory: (await getTemporaryDirectory()).path,
+        );
+        if (paymentSession != session) return;
+        await _storage.write(key: key, value: result.outputsJson);
+        if (paymentSession != session) return;
+        _lastReceipt = latestUnspentReceipt(
+          result.outputsJson,
+          result.scannedHeight,
+        );
+        _state = _state.copyWith(
+          onChainBalanceAtomic: result.totalBalance.toString(),
+          syncError: '',
+        );
+        _scannedTip = (session.$1, session.$2, result.scannedHashHex);
+        notifyListeners();
+      } catch (error) {
+        if (paymentSession == session) {
+          _scannedTip = null;
+          _state = _state.copyWith(syncError: error.toString());
+          notifyListeners();
+        }
+        rethrow;
+      }
     });
   }
 
-  /// Load cached outputs from storage and update balance.
-  Future<void> _loadCachedOutputs() async {
-    final key = _outputKey;
-    if (key == null) return;
-    final json = await _storage.read(key: key);
-    if (_outputKey == key) _updateOnChainBalance(json);
-  }
-
-  void _updateOnChainBalance(String? json) {
-    _state = _state.copyWith(
-      onChainBalanceAtomic: _cachedBalance(json).toString(),
-    );
-  }
-
-  /// Get the current spendable balance by reading cached outputs.
+  /// Read the balance from the current session's successful scan.
   Future<BigInt> getSpendableBalance() async {
     if (!_state.isUnlocked || _state.activeWalletId == null) {
       return BigInt.zero;
     }
-    return _cachedBalance(await getOwnedOutputsJson());
-  }
-
-  BigInt _cachedBalance(String? json) {
-    if (json == null || json.isEmpty || json == '[]') return BigInt.zero;
-    try {
-      final list = jsonDecode(json) as List;
-      var total = BigInt.zero;
-      for (final item in list) {
-        total += BigInt.parse(item['value'].toString());
-      }
-      return total;
-    } catch (_) {
-      return BigInt.zero;
-    }
+    return scannedBalance ??
+        (throw StateError('Wallet balance requires a successful scan'));
   }
 
   /// Get cached owned outputs JSON for transaction building.
@@ -1047,7 +1038,7 @@ class WalletService extends ChangeNotifier {
     final updated = jsonEncode(remaining);
     await _storage.write(key: key, value: updated);
     if (_outputKey != key) return;
-    _updateOnChainBalance(updated);
+    _scannedTip = null;
     notifyListeners();
   }
 
@@ -1118,9 +1109,9 @@ class WalletService extends ChangeNotifier {
   Future<void> setCustomRpcEndpoint(String endpoint) async {
     await _storage.write(key: _kCustomRpcEndpoint, value: endpoint);
     _state = _state.copyWith(rpcEndpoint: endpoint, onChainBalanceAtomic: '0');
-    await _loadCachedOutputs();
-    await _refreshMinedRewards();
+    _scannedTip = null;
     notifyListeners();
+    await refreshAll();
   }
 
   Future<void> setPoolApiEndpoint(String endpoint) async {
@@ -1170,9 +1161,9 @@ class WalletService extends ChangeNotifier {
     } else {
       _state = _state.copyWith(network: network, onChainBalanceAtomic: '0');
     }
-    await _loadCachedOutputs();
-    await _refreshMinedRewards();
+    _scannedTip = null;
     notifyListeners();
+    await refreshAll();
   }
 
   Future<void> refreshMinedRewards() async {
@@ -1186,23 +1177,16 @@ class WalletService extends ChangeNotifier {
   /// that received coinbase outputs kept showing a zero balance until the send
   /// screen happened to trigger a scan.
   ///
-  /// A failed scan keeps the cached balance on screen — an unreachable node must
-  /// not blank a wallet — but the reason is recorded in [WalletState.syncError]
-  /// so the UI can say why the numbers are stale.
   Future<void> refreshAll() async {
-    final key = _outputKey;
-    await _loadCachedOutputs();
-    if (_outputKey != key) return;
-    var syncError = '';
-    if (_state.isUnlocked && _state.seedHex != null) {
+    final session = paymentSession;
+    if (session != null) {
       try {
         await scanWalletOutputs();
-      } catch (error) {
-        syncError = error.toString();
+      } catch (_) {
+        // scanWalletOutputs already published the failure for this session.
       }
     }
-    if (_outputKey != key) return;
-    _state = _state.copyWith(syncError: syncError);
+    if (paymentSession != session) return;
     await _refreshMinedRewards();
     notifyListeners();
   }
@@ -1581,9 +1565,12 @@ class WalletService extends ChangeNotifier {
         final status = await rust.getChainStatus(host: host, port: port);
         if (!timer.isActive || paymentSession != session) return;
         final tip = (session.$1, session.$2, status.tipHashHex);
-        if (tip != _polledTip || _state.syncError.isNotEmpty) {
+        if (tip != _scannedTip || _state.syncError.isNotEmpty) {
+          if (_scannedTip != null) {
+            _scannedTip = null;
+            notifyListeners();
+          }
           await scanWalletOutputs();
-          if (timer.isActive && paymentSession == session) _polledTip = tip;
         }
       } catch (error) {
         if (timer.isActive &&
@@ -1614,7 +1601,7 @@ class WalletService extends ChangeNotifier {
   void _stopMinedRewardsPolling() {
     _paymentTimer?.cancel();
     _paymentTimer = null;
-    _polledTip = null;
+    _scannedTip = null;
     _lastReceipt = null;
     _minedRewardsTimer?.cancel();
     _minedRewardsTimer = null;
