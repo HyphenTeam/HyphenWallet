@@ -1,6 +1,6 @@
 # Hyphen Wallet
 
-[简体中文](README_CN.md)
+[简体中文](README_CN.md) · [Wallet documentation](https://github.com/HyphenTeam/HyphenWallet/wiki)
 
 Hyphen Wallet is a Flutter client for the Hyphen research blockchain. Its Rust library derives keys, scans blocks for owned outputs and signs transactions locally. A separate command-line payout agent serves shared mining pools. Use devnet funds while the wallet and protocol await independent review.
 

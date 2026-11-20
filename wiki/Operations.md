@@ -2,7 +2,7 @@
 
 ## Recovery, scanning and confirmation
 
-Back up the recovery words in order and the exact password used to create the Flutter wallet. Store them separately offline. The app derives keys from both. A different password opens a different address. Compare the restored receiving address with a known copy before using it. Local wallet files use Argon2id and XChaCha20-Poly1305 authenticated encryption.
+Record the recovery words in their original order and retain the password used to create the Flutter wallet. Store the two backups separately and offline. The wallet derives its keys from both inputs, so a different password produces a different address. After recovery, compare the receiving address with a copy saved when the wallet was created. Local wallet files use Argon2id for key derivation and XChaCha20-Poly1305 for authenticated encryption.
 
 The restore screen adds a wallet and accepts 12 or 24 English words. It trims the ends of the phrase. The historical derivation reads its internal whitespace and the original password as UTF-8 bytes. Preserve repeated spaces and the original Unicode form. Enter the original password directly. The app applies its historical password transform automatically. The English BIP39 seed vector checks the underlying PBKDF2 step. An executable built from wallet commit `aac6300` and its own lockfile produced the same receiving address as the current wallet for the recovery test fixture.
 
@@ -28,7 +28,7 @@ The home balance comes from a successful output scan for the active wallet and R
 
 Receive and Activity show the latest incoming transfer with unspent outputs from the active scan. Local history supplies outgoing submissions. For order-specific verification, `confirm-online` checks the retained invoice against your own running HYOF node. The optional evidence file preserves the observed transaction across reorganizations.
 
-For whole-reserve payments on `offline-devnet`, `hyphen-reserve-wallet prepare` saves the ordinary signed funding transaction. `submit` relays that file and `balance` scans the resulting canonical wallet outputs. The node repository's `hyphen-offline` signer verifies a local checkpoint and the recipient's request before a conditional receipt is recorded. Back up the latest signed delivery alongside the funding terms. The Flutter NFC screen exchanges receiving addresses. [Offline payment commands and recovery](https://github.com/HyphenTeam/Hyphen/blob/main/wiki/Offline-Payments.md)
+For whole-reserve payments on `offline-devnet`, `hyphen-reserve-wallet prepare` saves the signed funding transaction. `submit` relays the saved transaction, and `balance` scans the canonical chain for wallet outputs. The node repository’s `hyphen-offline` signer verifies a local checkpoint and the recipient’s request before recording a conditional receipt. Back up the latest signed delivery together with the funding terms. The Flutter NFC screen exchanges receiving addresses. [Offline payment commands and recovery](https://github.com/HyphenTeam/Hyphen/wiki/Offline-Payments)
 
 ## Single-output disclosure
 
@@ -51,7 +51,7 @@ cargo build --release --locked --manifest-path rust/Cargo.toml --bin hyphen-payo
 ./rust/target/release/hyphen-payout-agent --network devnet --bind 127.0.0.1:38401 --node-host 127.0.0.1 --node-port 48333 --seed-file pool.seed --token-file payout.token --state-dir payout_agent_state --fee 1000000
 ```
 
-The agent exposes authenticated `/v1/health`, `/v1/submit` and `/v1/status` routes on loopback. Pool accounting assigns an intent ID and reserves the amount. The agent persists the signed transaction before relaying it, reuses the transaction for a retry and serializes unconfirmed payouts. Preserve the seed, token and agent state across restarts. [Pool settlement](https://github.com/HyphenTeam/HyphenPool/blob/main/wiki/Operations.md)
+The agent exposes authenticated `/v1/health`, `/v1/submit` and `/v1/status` routes on loopback. The pool assigns an ID to each payout intent and reserves the corresponding amount. The agent saves the signed transaction before broadcasting it, reuses it on retry and processes unconfirmed payouts in sequence. Preserve the seed, token and agent state across restarts. [Pool settlement](https://github.com/HyphenTeam/HyphenPool/wiki/Operations#run-shared-payouts)
 
 One agent holds the state-directory lock for its lifetime. It replaces the saved state atomically from a temporary file in the same directory. If the old main file is absent at upgrade, the agent can recover the previous `.bak`. A corrupt main file produces a startup error. Stop the agent before copying its state for backup.
 
@@ -85,7 +85,7 @@ Google Sans includes the authors' license. The wallet bundles three static Harmo
 
 ## 中文说明
 
-在 `offline-devnet` 上，可用 `hyphen-reserve-wallet prepare` 保存普通预锁付款，再用 `submit` 提交原文件。`balance` 扫描规范链余额。离线工具 `hyphen-offline` 使用收款人自己的检查点和签名请求核验交付；请备份最后收到的签名凭证及原始条款。Flutter 的 NFC 收款入口目前传递收款地址。[双离线操作与恢复](https://github.com/HyphenTeam/Hyphen/blob/main/wiki/Offline-Payments.md)
+在 `offline-devnet` 上，使用 `hyphen-reserve-wallet prepare` 保存已签名的预锁交易，再用 `submit` 提交。`balance` 扫描规范链并计算钱包余额。收款人使用 `hyphen-offline`，依据自己的检查点和签名请求核验收到的凭证。请将最新的签名凭证与原始预锁条款一并备份。Flutter 的 NFC 收款功能用于交换收款地址。[离线付款与恢复](https://github.com/HyphenTeam/Hyphen/wiki/Offline-Payments)
 
 钱包中的三款 HarmonyOS Sans SC 静态字重标记为 2.400 版。华为旧版下载包含 1.0 版静态字体，当前下载包含单个 SC 字体，两者均与钱包清单的三个哈希不同。发布仍需核对这三份原文件的来源、适用授权及软件内的声明要求。[字体清单](../assets/fonts/manifest.json) · [华为设计资源](https://developer.huawei.com/consumer/cn/design/resource)
 
