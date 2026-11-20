@@ -51,7 +51,7 @@ jobs:
           rustup default 1.97.0
       - name: Install pinned Flutter SDK
         run: |
-          git clone --depth 1 --branch 3.44.6 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          git clone --depth 1 --branch 3.50.0 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
       - name: Reject a lock file resolved from a package mirror
         run: |

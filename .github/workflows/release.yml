@@ -47,7 +47,7 @@ jobs:
       - name: Install pinned Flutter SDK
         shell: pwsh
         run: |
-          git clone --depth 1 --branch 3.44.6 https://github.com/flutter/flutter.git "$env:RUNNER_TEMP/flutter"
+          git clone -c core.longpaths=true --depth 1 --branch 3.50.0 https://github.com/flutter/flutter.git "$env:RUNNER_TEMP/flutter"
           "$env:RUNNER_TEMP/flutter/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Build application and payout agent
         shell: pwsh

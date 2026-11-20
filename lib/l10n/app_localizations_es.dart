@@ -1,5 +1,8 @@
+// ignore_for_file: deprecated_member_use
+
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -7,6 +10,12 @@ import 'app_localizations.dart';
 /// The translations for Spanish Castilian (`es`).
 class AppLocalizationsEs extends AppLocalizations {
   AppLocalizationsEs([String locale = 'es']) : super(locale);
+
+  @override
+  String get latestUnspentReceived => 'Último pago con saldo disponible';
+
+  @override
+  String get blockConfirmations => 'Confirmaciones de bloque';
 
   @override
   String get appTitle => 'Hyphen Cartera';
@@ -20,9 +29,6 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get welcomeSubtitle =>
       'Una cartera de escritorio para\nredes de desarrollo Hyphen.';
-
-  @override
-  String get wotsSignatures => 'Firmas WOTS+';
 
   @override
   String get aesEncryption => 'Cifrado autenticado';
@@ -55,21 +61,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get unlock => 'Desbloquear';
 
   @override
-  String get forgotPasswordRestore =>
-      '¿Olvidó su contraseña? Restaurar con mnemónico';
-
-  @override
-  String get resetWallet => 'Restablecer cartera';
-
-  @override
-  String get resetWalletMessage =>
-      'Esto eliminará los datos de su cartera en este dispositivo. Puede restaurarla usando su frase de recuperación de 24 palabras.\n\nAsegúrese de tener su frase mnemónica antes de continuar.';
-
-  @override
   String get cancel => 'Cancelar';
-
-  @override
-  String get resetAndRestore => 'Restablecer y restaurar';
 
   @override
   String get createWallet => 'Crear cartera';
@@ -82,7 +74,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get writeDownWords =>
-      'Escriba estas 24 palabras en orden y guárdelas en un lugar seguro. Esta es la ÚNICA forma de recuperar su cartera.';
+      'Guarde estas 24 palabras en orden y la contraseña original por separado. Necesitará ambas para recuperar la misma dirección.';
 
   @override
   String get neverSharePhrase =>
@@ -119,7 +111,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get passwordEncryptInfo =>
-      'Esta contraseña cifrará su cartera en este dispositivo. La necesitará cada vez que abra la aplicación.';
+      'La contraseña cifra la cartera y determina sus claves. Para restaurarla, introduzca la contraseña original. Otra contraseña genera otra dirección.';
 
   @override
   String get confirmPassword => 'Confirmar contraseña';
@@ -145,7 +137,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get enterRecoveryPhrase =>
-      'Ingrese su frase de recuperación de 24 palabras, separadas por espacios.';
+      'Introduzca sus 12 o 24 palabras en orden, separadas por espacios.';
 
   @override
   String get mnemonicHint => 'palabra1 palabra2 palabra3 ...';
@@ -338,7 +330,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get deleteWalletWarning =>
-      'Esta acción eliminará permanentemente su cartera de este dispositivo.\n\nAsegúrese de haber respaldado su frase de recuperación. Sin ella, sus fondos se perderán para siempre.';
+      'La cartera se eliminará de este dispositivo. Compruebe antes que la frase y la contraseña original recuperan la misma dirección.';
 
   @override
   String get delete => 'Eliminar';
@@ -351,7 +343,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get neverShareWarning =>
-      'Nunca comparta su frase de recuperación con nadie. Cualquier persona con estas palabras puede acceder a sus fondos.';
+      'Mantenga la frase en secreto y guarde la contraseña original por separado. Necesitará ambas para la recuperación.';
 
   @override
   String get tapBelowToReveal => 'Toque abajo para revelar';

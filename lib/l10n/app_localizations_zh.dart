@@ -1,5 +1,8 @@
+// ignore_for_file: deprecated_member_use
+
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -7,6 +10,12 @@ import 'app_localizations.dart';
 /// The translations for Chinese (`zh`).
 class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
+
+  @override
+  String get latestUnspentReceived => '最近一笔尚未花完的收款';
+
+  @override
+  String get blockConfirmations => '区块确认数';
 
   @override
   String get appTitle => 'Hyphen 钱包';
@@ -19,9 +28,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get welcomeSubtitle => '面向 Hyphen 开发网络的\n桌面钱包。';
-
-  @override
-  String get wotsSignatures => 'WOTS+ 签名';
 
   @override
   String get aesEncryption => '认证加密';
@@ -54,20 +60,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get unlock => '解锁';
 
   @override
-  String get forgotPasswordRestore => '忘记密码？使用助记词恢复';
-
-  @override
-  String get resetWallet => '重置钱包';
-
-  @override
-  String get resetWalletMessage =>
-      '此操作将删除设备上的钱包数据。您可以使用24个助记词恢复。\n\n请确保您已保存好助记词后再继续。';
-
-  @override
   String get cancel => '取消';
-
-  @override
-  String get resetAndRestore => '重置并恢复';
 
   @override
   String get createWallet => '创建钱包';
@@ -79,7 +72,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get recoveryPhrase => '助记词';
 
   @override
-  String get writeDownWords => '请按顺序写下这24个词并保存在安全的地方。这是恢复钱包的唯一方式。';
+  String get writeDownWords => '请按顺序备份这 24 个助记词，并另行保存创建钱包时的原密码。恢复同一地址需要两者。';
 
   @override
   String get neverSharePhrase => '切勿将助记词分享给任何人！';
@@ -113,7 +106,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setPassword => '设置密码';
 
   @override
-  String get passwordEncryptInfo => '此密码将加密设备上的钱包。每次打开应用时都需要输入。';
+  String get passwordEncryptInfo =>
+      '密码用于加密本机钱包，也参与生成密钥。恢复时请输入创建钱包时的原密码。不同的密码会得到不同的地址。';
 
   @override
   String get confirmPassword => '确认密码';
@@ -138,7 +132,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get restoreWallet => '恢复钱包';
 
   @override
-  String get enterRecoveryPhrase => '输入您的24个助记词，用空格分隔。';
+  String get enterRecoveryPhrase => '请按顺序输入 12 或 24 个助记词，用空格分隔。';
 
   @override
   String get mnemonicHint => '单词1 单词2 单词3 ...';
@@ -325,8 +319,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get removeAllWalletData => '从此设备移除所有钱包数据';
 
   @override
-  String get deleteWalletWarning =>
-      '此操作将永久删除设备上的钱包。\n\n请确保已备份助记词。没有助记词，资金将永久丢失。';
+  String get deleteWalletWarning => '此操作将删除本机钱包。请先确认助记词和原密码能够恢复出相同的收款地址。';
 
   @override
   String get delete => '删除';
@@ -338,7 +331,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get recoveryPhraseTitle => '助记词';
 
   @override
-  String get neverShareWarning => '切勿将助记词分享给任何人。拥有这些词的任何人都可以访问您的资金。';
+  String get neverShareWarning => '请妥善保管助记词，并另行备份创建钱包时的原密码。恢复钱包需要两者。';
 
   @override
   String get tapBelowToReveal => '点击下方显示';

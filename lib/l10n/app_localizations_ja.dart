@@ -1,5 +1,8 @@
+// ignore_for_file: deprecated_member_use
+
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -7,6 +10,12 @@ import 'app_localizations.dart';
 /// The translations for Japanese (`ja`).
 class AppLocalizationsJa extends AppLocalizations {
   AppLocalizationsJa([String locale = 'ja']) : super(locale);
+
+  @override
+  String get latestUnspentReceived => '残高のある直近の入金';
+
+  @override
+  String get blockConfirmations => 'ブロック承認数';
 
   @override
   String get appTitle => 'Hyphen ウォレット';
@@ -19,9 +28,6 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get welcomeSubtitle => 'Hyphen 開発ネットワーク向けの\nデスクトップウォレット。';
-
-  @override
-  String get wotsSignatures => 'WOTS+ 署名';
 
   @override
   String get aesEncryption => '認証付き暗号化';
@@ -54,20 +60,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get unlock => 'ロック解除';
 
   @override
-  String get forgotPasswordRestore => 'パスワードを忘れた場合はニーモニックで復元';
-
-  @override
-  String get resetWallet => 'ウォレットをリセット';
-
-  @override
-  String get resetWalletMessage =>
-      'このデバイスのウォレットデータが削除されます。24語のリカバリーフレーズで復元できます。\n\n続行する前にニーモニックフレーズがあることを確認してください。';
-
-  @override
   String get cancel => 'キャンセル';
-
-  @override
-  String get resetAndRestore => 'リセットして復元';
 
   @override
   String get createWallet => 'ウォレットを作成';
@@ -80,7 +73,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get writeDownWords =>
-      'これらの24語を順番に書き留め、安全な場所に保管してください。これがウォレットを復元する唯一の方法です。';
+      '24語を順番に控え、作成時のパスワードを別に保管してください。同じアドレスの復元には両方が必要です。';
 
   @override
   String get neverSharePhrase => 'リカバリーフレーズを絶対に他人と共有しないでください！';
@@ -116,7 +109,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get passwordEncryptInfo =>
-      'このパスワードはデバイス上のウォレットを暗号化します。アプリを開くたびに必要になります。';
+      'パスワードは暗号化と鍵の生成に使われます。復元時には作成時と同じパスワードを入力してください。異なるパスワードでは別のアドレスになります。';
 
   @override
   String get confirmPassword => 'パスワードを確認';
@@ -141,7 +134,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get restoreWallet => 'ウォレットを復元';
 
   @override
-  String get enterRecoveryPhrase => '24語のリカバリーフレーズをスペースで区切って入力してください。';
+  String get enterRecoveryPhrase => '12語または24語を順番にスペースで区切って入力してください。';
 
   @override
   String get mnemonicHint => '単語1 単語2 単語3 ...';
@@ -330,7 +323,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get deleteWalletWarning =>
-      'この操作はデバイスからウォレットを完全に削除します。\n\nリカバリーフレーズをバックアップしていることを確認してください。フレーズがないと資金は永久に失われます。';
+      'ウォレットをこの端末から削除します。先にフレーズと作成時のパスワードで同じ受取アドレスを復元できることを確認してください。';
 
   @override
   String get delete => '削除';
@@ -343,7 +336,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get neverShareWarning =>
-      'リカバリーフレーズを絶対に他人と共有しないでください。これらの単語を持つ誰もがあなたの資金にアクセスできます。';
+      'フレーズを他人に教えず、作成時のパスワードとは別に保管してください。復元には両方が必要です。';
 
   @override
   String get tapBelowToReveal => '下をタップして表示';

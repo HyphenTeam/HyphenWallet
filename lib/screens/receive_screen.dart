@@ -1,12 +1,17 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+
 import '../l10n/app_localizations.dart';
+
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:nfc_manager/nfc_manager.dart';
+import 'package:nfc_manager_ndef/nfc_manager_ndef.dart';
 
+import '../services/nfc_address.dart';
+import '../services/payment_amount.dart';
 import '../services/wallet_service.dart';
 
 class ReceiveScreen extends StatefulWidget {
@@ -27,40 +32,52 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
 
   Future<void> _startNfcBroadcast(String address, AppLocalizations l10n) async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
-    final available = await NfcManager.instance.isAvailable();
-    if (!mounted) return;
-    if (!available) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.nfcNotAvailable)));
+    final available = await NfcManager.instance.checkAvailability();
+    if (!mounted || _nfcBroadcasting) return;
+    if (available != NfcAvailability.enabled) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.nfcNotAvailable)));
       return;
     }
     setState(() => _nfcBroadcasting = true);
-    NfcManager.instance.startSession(
-      onDiscovered: (NfcTag tag) async {
-        final ndef = Ndef.from(tag);
-        if (ndef == null || !ndef.isWritable) {
-          // Send via HCE / peer - write NDEF with address
-          await NfcManager.instance.stopSession();
+    try {
+      await NfcManager.instance.startSession(
+        pollingOptions: {NfcPollingOption.iso14443, NfcPollingOption.iso15693},
+        invalidateAfterFirstReadIos: false,
+        onDiscovered: (NfcTag tag) async {
+          try {
+            final ndef = Ndef.from(tag);
+            if (ndef == null || !ndef.isWritable) return;
+            await ndef.write(message: encodeNfcAddress(address));
+            if (mounted) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text(l10n.nfcTransferSent)));
+            }
+          } on Exception catch (error) {
+            if (mounted) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text(error.toString())));
+            }
+          } finally {
+            if (mounted) {
+              setState(() => _nfcBroadcasting = false);
+              await NfcManager.instance.stopSession();
+            }
+          }
+        },
+        onSessionErrorIos: (error) {
           if (!mounted) return;
           setState(() => _nfcBroadcasting = false);
-          return;
-        }
-        final message = NdefMessage([NdefRecord.createText(address)]);
-        await ndef.write(message);
-        await NfcManager.instance.stopSession();
-        if (!mounted) return;
+        },
+      );
+    } on Exception catch (error) {
+      if (mounted) {
         setState(() => _nfcBroadcasting = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.nfcTransferSent)));
-      },
-      onError: (error) async {
-        await NfcManager.instance.stopSession();
-        if (!mounted) return;
-        setState(() => _nfcBroadcasting = false);
-      },
-    );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+      return;
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -76,6 +93,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     final wallet = context.watch<WalletService>();
     final address = wallet.state.address ?? '';
     final cs = Theme.of(context).colorScheme;
+    final receipt = wallet.lastReceipt;
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.receiveTitle)),
@@ -83,6 +101,18 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: Column(
           children: [
+            if (wallet.state.syncError.isNotEmpty)
+              Text(wallet.state.syncError, style: TextStyle(color: cs.error)),
+            if (receipt != null)
+              Semantics(
+                liveRegion: true,
+                child: ListTile(
+                  title: Text(l10n.latestUnspentReceived),
+                  subtitle: SelectableText(
+                    '${formatPaymentAmount(receipt.amount)}\n${l10n.blockConfirmations} · ${receipt.confirmations}\n${receipt.hash}',
+                  ),
+                ),
+              ),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),

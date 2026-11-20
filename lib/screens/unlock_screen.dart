@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../l10n/app_localizations.dart';
+
 import 'package:provider/provider.dart';
 
 import '../services/wallet_service.dart';
@@ -257,9 +259,11 @@ class _UnlockScreenState extends State<UnlockScreen>
                 ],
                 const Spacer(flex: 3),
                 TextButton(
-                  onPressed: () => _showResetDialog(context),
+                  onPressed: _loading
+                      ? null
+                      : () => Navigator.pushNamed(context, '/restore'),
                   child: Text(
-                    l10n.forgotPasswordRestore,
+                    l10n.restoreExistingWallet,
                     style: const TextStyle(fontSize: 13),
                   ),
                 ),
@@ -268,40 +272,6 @@ class _UnlockScreenState extends State<UnlockScreen>
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  void _showResetDialog(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final cs = Theme.of(context).colorScheme;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: cs.surface,
-        title: Text(l10n.resetWallet),
-        content: Text(l10n.resetWalletMessage),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final wallet = context.read<WalletService>();
-              await wallet.deleteWallet();
-              if (!context.mounted) return;
-              Navigator.of(context).pushReplacementNamed(
-                await wallet.hasWallet() ? '/unlock' : '/welcome',
-              );
-            },
-            child: Text(
-              l10n.resetAndRestore,
-              style: TextStyle(color: cs.error),
-            ),
-          ),
-        ],
       ),
     );
   }

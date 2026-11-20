@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class ThemePreset {
   final String name;
@@ -149,7 +149,8 @@ ThemeData buildHyphenTheme({int presetIndex = 0}) {
     brightness: Brightness.light,
     colorScheme: seedScheme,
     scaffoldBackgroundColor: HyphenColors.background,
-    fontFamily: 'Inter',
+    fontFamily: 'GoogleSans',
+    fontFamilyFallback: const ['HarmonyOSSans'],
     cardTheme: CardThemeData(
       color: HyphenColors.card,
       elevation: 0,
@@ -347,7 +348,8 @@ ThemeData buildHyphenDarkTheme({
     brightness: Brightness.dark,
     colorScheme: darkScheme,
     scaffoldBackgroundColor: darkScheme.surface,
-    fontFamily: 'Inter',
+    fontFamily: 'GoogleSans',
+    fontFamilyFallback: const ['HarmonyOSSans'],
     cardTheme: CardThemeData(
       color: const Color(0xFF1E1E1E),
       elevation: 0,

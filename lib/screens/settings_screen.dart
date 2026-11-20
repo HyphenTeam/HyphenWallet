@@ -1,7 +1,9 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../l10n/app_localizations.dart';
+
 import 'package:provider/provider.dart';
 
 import '../services/wallet_service.dart';
@@ -76,9 +78,8 @@ class SettingsScreen extends StatelessWidget {
                 subtitle: l10n.clearSessionRequirePassword,
                 onTap: () {
                   wallet.lock();
-                  Navigator.of(
-                    context,
-                  ).pushNamedAndRemoveUntil('/unlock', (_) => false);
+                  Navigator.of(context)
+                      .pushNamedAndRemoveUntil('/unlock', (_) => false);
                 },
               ),
               const SizedBox(height: 8),
@@ -422,9 +423,9 @@ class SettingsScreen extends StatelessWidget {
                       return Material(
                         color: isSelected
                             ? preset.primary.withAlpha(12)
-                            : Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHighest,
+                            : Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(16),
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(

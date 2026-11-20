@@ -9,7 +9,7 @@ use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
-// ─── Protobuf message types (mirrors hyphen-rpc/src/messages.rs) ────
+// RPC field numbers mirror hyphen-rpc/src/messages.rs.
 
 #[derive(Clone, prost::Message)]
 pub struct RpcRequest {
@@ -32,8 +32,6 @@ pub struct RpcResponse {
     #[prost(string, tag = "4")]
     pub error: String,
 }
-
-// ─── Request / Response sub-messages ────
 
 pub const METHOD_GET_CHAIN_INFO: u32 = 3;
 pub const METHOD_SUBMIT_TX: u32 = 4;
@@ -104,6 +102,8 @@ pub struct BlockResponse {
     pub height: u64,
     #[prost(uint64, tag = "5")]
     pub timestamp: u64,
+    #[prost(bytes = "vec", tag = "6")]
+    pub block_authorization: Vec<u8>,
 }
 
 #[derive(Clone, prost::Message)]
@@ -179,8 +179,6 @@ pub struct RandomOutputsResponse {
     pub outputs: Vec<OutputInfoMsg>,
 }
 
-// ─── RPC Client ─────────────────────────────────────────────
-
 const MAX_FRAME_SIZE: u32 = 64 * 1024 * 1024;
 
 pub struct RpcClient {
@@ -246,12 +244,26 @@ impl RpcClient {
         if resp_len > MAX_FRAME_SIZE {
             return Err(format!("response too large: {resp_len}"));
         }
-        let mut resp_buf = vec![0u8; resp_len as usize];
-        self.stream
-            .read_exact(&mut resp_buf)
+        let mut resp_buf = Vec::with_capacity((resp_len as usize).min(8192));
+        let received = (&self.stream)
+            .take(u64::from(resp_len))
+            .read_to_end(&mut resp_buf)
             .map_err(|e| format!("read response body: {e}"))?;
+        if received != resp_len as usize {
+            return Err(format!(
+                "read response body: received {received} of {resp_len} bytes"
+            ));
+        }
 
-        RpcResponse::decode(&resp_buf[..]).map_err(|e| format!("decode response: {e}"))
+        let response =
+            RpcResponse::decode(&resp_buf[..]).map_err(|e| format!("decode response: {e}"))?;
+        if response.id != id {
+            return Err(format!(
+                "RPC response ID {} does not match request {id}",
+                response.id
+            ));
+        }
+        Ok(response)
     }
 
     pub fn get_chain_info(&mut self) -> Result<ChainInfoResponse, String> {
@@ -269,7 +281,14 @@ impl RpcClient {
         if !resp.success {
             return Err(format!("get_block_by_height failed: {}", resp.error));
         }
-        BlockResponse::decode(&resp.payload[..]).map_err(|e| format!("decode block: {e}"))
+        let block =
+            BlockResponse::decode(&resp.payload[..]).map_err(|e| format!("decode block: {e}"))?;
+        if block.height != height || block.hash.len() != 32 {
+            return Err(format!(
+                "invalid block identity in RPC response for height {height}"
+            ));
+        }
+        Ok(block)
     }
 
     pub fn submit_transaction(

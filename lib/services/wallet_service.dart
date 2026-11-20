@@ -3,9 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:hyphen_wallet/src/rust/api/wallet.dart' as rust;
 import 'package:hyphen_wallet/src/rust/frb_generated.dart';
 
@@ -21,8 +22,8 @@ const _kCustomRpcEndpoint = 'custom_rpc_endpoint';
 const _kPoolApiEndpoint = 'pool_api_endpoint';
 const _kExplorerApiEndpoint = 'explorer_api_endpoint';
 const _kThemeColorIndex = 'theme_color_index';
-const _kLastScannedHeight = 'last_scanned_height';
-const _kOwnedOutputs = 'owned_outputs';
+const _kOwnedOutputs = 'owned_outputs_v2';
+const _kOutputCacheMigrated = 'output_cache_v2_migrated';
 const _kTransferHistory = 'transfer_history';
 
 /// RPC ports per profile. The non-mainnet node this wallet points at is the
@@ -350,14 +351,31 @@ class WalletState {
   }
 }
 
+class _SerialOperations {
+  Future<void> _pending = Future<void>.value();
+
+  Future<T> run<T>(Future<T> Function() operation) {
+    final result = _pending.then((_) => operation());
+    _pending = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
+}
+
 class WalletService extends ChangeNotifier {
   final FlutterSecureStorage _storage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    aOptions: AndroidOptions(resetOnError: false, migrateWithBackup: true),
   );
   final LocalAuthentication _localAuth = LocalAuthentication();
 
   WalletState _state = const WalletState();
   WalletState get state => _state;
+  final _outputs = _SerialOperations();
+  final _credentials = _SerialOperations();
+  int _unlockGeneration = 0;
+  (int, String)? get paymentSession {
+    final key = _outputKey;
+    return key == null ? null : (_unlockGeneration, key);
+  }
 
   bool _initialized = false;
   bool get initialized => _initialized;
@@ -365,6 +383,12 @@ class WalletService extends ChangeNotifier {
   Locale? _locale;
   Locale? get locale => _locale;
   Timer? _minedRewardsTimer;
+  Timer? _paymentTimer;
+  (int, String, String)? _polledTip;
+  (int, String)? _receiptSession;
+  ({String hash, BigInt amount, BigInt confirmations})? _lastReceipt;
+  ({String hash, BigInt amount, BigInt confirmations})? get lastReceipt =>
+      paymentSession == _receiptSession ? _lastReceipt : null;
   int _themeColorIndex = 0;
   int get themeColorIndex => _themeColorIndex;
   bool _biometricEnabled = false;
@@ -374,6 +398,8 @@ class WalletService extends ChangeNotifier {
 
   Future<void> init() async {
     await RustLib.init();
+    await _storage.delete(key: _kBiometricPassword);
+    await migrateOutputCache();
     final networkStr = await _storage.read(key: _kCurrentNetwork);
     final network = networkStr == 'mainnet'
         ? HyphenNetwork.mainnet
@@ -421,6 +447,19 @@ class WalletService extends ChangeNotifier {
     _startMinedRewardsPolling();
     await _refreshMinedRewards();
     notifyListeners();
+  }
+
+  @visibleForTesting
+  Future<void> migrateOutputCache() async {
+    if (await _storage.read(key: _kOutputCacheMigrated) == 'true') return;
+    for (final key in (await _storage.readAll()).keys.toList(growable: false)) {
+      if (key == 'owned_outputs' ||
+          (key.startsWith('owned_outputs_') &&
+              !key.startsWith('${_kOwnedOutputs}_'))) {
+        await _storage.delete(key: key);
+      }
+    }
+    await _storage.write(key: _kOutputCacheMigrated, value: 'true');
   }
 
   Future<bool> hasWallet() async {
@@ -483,8 +522,23 @@ class WalletService extends ChangeNotifier {
   }
 
   Future<void> setBiometricEnabled(bool enabled) async {
+    _unlockGeneration++;
     _biometricEnabled = enabled;
-    await _storage.write(key: _kBiometricEnabled, value: enabled.toString());
+    await _credentials.run(() async {
+      if (!enabled) {
+        final keys = (await _storage.readAll()).keys
+            .where(
+              (key) =>
+                  key == _kBiometricPassword ||
+                  key.startsWith('${_kBiometricPassword}_'),
+            )
+            .toList(growable: false);
+        for (final key in keys) {
+          await _storage.delete(key: key);
+        }
+      }
+      await _storage.write(key: _kBiometricEnabled, value: enabled.toString());
+    });
     notifyListeners();
   }
 
@@ -495,10 +549,8 @@ class WalletService extends ChangeNotifier {
     try {
       return await _localAuth.authenticate(
         localizedReason: reason,
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: true,
-        ),
+        persistAcrossBackgrounding: true,
+        biometricOnly: true,
       );
     } catch (_) {
       return false;
@@ -508,6 +560,7 @@ class WalletService extends ChangeNotifier {
   /// Verify a password against the active wallet's encrypted data.
   /// Returns true if the password successfully decrypts the wallet.
   Future<bool> verifyPassword(String password) async {
+    final generation = _unlockGeneration;
     final activeId = _state.activeWalletId;
     if (activeId == null) return false;
     final walletInfo = _state.wallets.firstWhere(
@@ -519,7 +572,8 @@ class WalletService extends ChangeNotifier {
         base64Decode(walletInfo.encryptedData),
       );
       await rust.decryptWallet(encryptedData: encrypted, password: password);
-      return true;
+      return generation == _unlockGeneration &&
+          activeId == _state.activeWalletId;
     } catch (_) {
       return false;
     }
@@ -529,30 +583,13 @@ class WalletService extends ChangeNotifier {
   bool get isBiometricPlatform => Platform.isAndroid || Platform.isIOS;
 
   Future<String> createWallet(String password, {String? name}) async {
-    final pqPassphrase = await rust.pqTransformPassword(password: password);
-    final result = await rust.restoreWallet(
-      mnemonic: (await rust.generateMnemonic(wordCount: 24)),
-      passphrase: pqPassphrase,
-    );
-    final walletName = name ?? 'Wallet ${_state.wallets.length + 1}';
-    final walletId = DateTime.now().millisecondsSinceEpoch.toString();
-    await _persistNewWallet(walletId, walletName, result.mnemonic, password);
-    final wallets = await _loadWalletList();
-    _state = _state.copyWith(
-      isUnlocked: true,
-      mnemonic: result.mnemonic,
-      seedHex: result.seedHex,
-      address: _state.network == HyphenNetwork.mainnet
-          ? result.addressMainnet
-          : result.addressTestnet,
-      viewPublicHex: result.viewPublicHex,
-      spendPublicHex: result.spendPublicHex,
-      activeWalletId: walletId,
-      wallets: wallets,
-    );
-    await _refreshMinedRewards();
-    notifyListeners();
-    return result.mnemonic;
+    final generation = _unlockGeneration;
+    final mnemonic = await rust.generateMnemonic(wordCount: 24);
+    if (generation != _unlockGeneration) {
+      throw StateError('Wallet selection changed');
+    }
+    await restoreWallet(mnemonic, password, name: name);
+    return mnemonic;
   }
 
   Future<void> restoreWallet(
@@ -560,16 +597,32 @@ class WalletService extends ChangeNotifier {
     String password, {
     String? name,
   }) async {
+    final generation = ++_unlockGeneration;
     final pqPassphrase = await rust.pqTransformPassword(password: password);
     final result = await rust.restoreWallet(
       mnemonic: mnemonic,
       passphrase: pqPassphrase,
     );
     final walletName = name ?? 'Wallet ${_state.wallets.length + 1}';
-    final walletId = DateTime.now().millisecondsSinceEpoch.toString();
-    await _persistNewWallet(walletId, walletName, result.mnemonic, password);
+    final walletId = DateTime.now().microsecondsSinceEpoch.toString();
+    await _credentials.run(() async {
+      if (generation != _unlockGeneration) {
+        throw StateError('Wallet selection changed');
+      }
+      await _persistNewWallet(walletId, walletName, result.mnemonic, password);
+    });
     final wallets = await _loadWalletList();
-    _state = _state.copyWith(
+    if (generation != _unlockGeneration) {
+      _state = _state.copyWith(wallets: wallets);
+      notifyListeners();
+      throw StateError('Wallet selection changed');
+    }
+    _state = WalletState(
+      network: _state.network,
+      nodeMode: _state.nodeMode,
+      rpcEndpoint: _state.rpcEndpoint,
+      poolApiEndpoint: _state.poolApiEndpoint,
+      explorerApiEndpoint: _state.explorerApiEndpoint,
       isUnlocked: true,
       mnemonic: result.mnemonic,
       seedHex: result.seedHex,
@@ -581,11 +634,13 @@ class WalletService extends ChangeNotifier {
       activeWalletId: walletId,
       wallets: wallets,
     );
+    _startMinedRewardsPolling();
     await _refreshMinedRewards();
     notifyListeners();
   }
 
   Future<void> unlock(String password) async {
+    final generation = _unlockGeneration;
     final activeId = _state.activeWalletId;
     if (activeId == null) throw Exception('No active wallet');
     final walletInfo = _state.wallets.firstWhere(
@@ -604,9 +659,18 @@ class WalletService extends ChangeNotifier {
       mnemonic: mnemonic,
       passphrase: pqPassphrase,
     );
-    // Cache password for biometric unlock if enabled.
-    if (_biometricEnabled) {
-      await _storage.write(key: _kBiometricPassword, value: password);
+    bool current() =>
+        generation == _unlockGeneration && activeId == _state.activeWalletId;
+    await _credentials.run(() async {
+      if (current() && _biometricEnabled) {
+        await _storage.write(
+          key: '${_kBiometricPassword}_$activeId',
+          value: password,
+        );
+      }
+    });
+    if (!current()) {
+      throw StateError('Wallet unlock was cancelled');
     }
     _state = _state.copyWith(
       isUnlocked: true,
@@ -621,6 +685,7 @@ class WalletService extends ChangeNotifier {
     _startMinedRewardsPolling();
     await refreshAll();
     await loadTransferHistory();
+    if (!current()) throw StateError('Wallet unlock was cancelled');
     notifyListeners();
   }
 
@@ -628,16 +693,27 @@ class WalletService extends ChangeNotifier {
   Future<bool> unlockWithBiometrics({
     String reason = 'Authenticate to unlock Hyphen Wallet',
   }) async {
-    if (!_biometricEnabled) return false;
+    final activeId = _state.activeWalletId;
+    final generation = _unlockGeneration;
+    if (!_biometricEnabled || activeId == null) return false;
     final authenticated = await authenticateWithBiometrics(reason: reason);
     if (!authenticated) return false;
-    final password = await _storage.read(key: _kBiometricPassword);
-    if (password == null || password.isEmpty) return false;
+    final password = await _storage.read(
+      key: '${_kBiometricPassword}_$activeId',
+    );
+    if (!_biometricEnabled ||
+        activeId != _state.activeWalletId ||
+        generation != _unlockGeneration ||
+        password == null ||
+        password.isEmpty) {
+      return false;
+    }
     await unlock(password);
     return true;
   }
 
   void lock() {
+    _unlockGeneration++;
     _stopMinedRewardsPolling();
     _state = WalletState(
       isUnlocked: false,
@@ -653,7 +729,8 @@ class WalletService extends ChangeNotifier {
   }
 
   Future<void> switchWallet(String walletId) async {
-    await _storage.write(key: _kActiveWalletId, value: walletId);
+    _unlockGeneration++;
+    _stopMinedRewardsPolling();
     _state = WalletState(
       isUnlocked: false,
       network: _state.network,
@@ -663,6 +740,9 @@ class WalletService extends ChangeNotifier {
       rpcEndpoint: _state.rpcEndpoint,
       poolApiEndpoint: _state.poolApiEndpoint,
       explorerApiEndpoint: _state.explorerApiEndpoint,
+    );
+    await _credentials.run(
+      () => _storage.write(key: _kActiveWalletId, value: walletId),
     );
     notifyListeners();
   }
@@ -678,6 +758,20 @@ class WalletService extends ChangeNotifier {
   }
 
   Future<void> deleteWalletById(String walletId) async {
+    if (_state.activeWalletId == walletId) lock();
+    await _credentials.run(
+      () => _storage.delete(key: '${_kBiometricPassword}_$walletId'),
+    );
+    await _outputs.run(() async {
+      await _storage.delete(key: '${_kTransferHistory}_$walletId');
+      for (final key in (await _storage.readAll()).keys.toList(
+        growable: false,
+      )) {
+        if (key.startsWith('${_kOwnedOutputs}_${walletId}_')) {
+          await _storage.delete(key: key);
+        }
+      }
+    });
     final wallets = List<WalletInfo>.from(_state.wallets);
     wallets.removeWhere((w) => w.id == walletId);
     await _saveWalletList(wallets);
@@ -706,6 +800,7 @@ class WalletService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _unlockGeneration++;
     _stopMinedRewardsPolling();
     super.dispose();
   }
@@ -762,6 +857,13 @@ class WalletService extends ChangeNotifier {
     return parsed ?? ('127.0.0.1', kDefaultRpcPort);
   }
 
+  String? get _outputKey {
+    if (!_state.isUnlocked || _state.activeWalletId == null) return null;
+    final (host, port) = _rpcHostPort;
+    final scope = jsonEncode([_state.network.name, host, port]);
+    return '${_kOwnedOutputs}_${_state.activeWalletId}_${base64Url.encode(utf8.encode(scope))}';
+  }
+
   /// Scan the chain for wallet-owned outputs and update the balance.
   ///
   /// Every scan walks from genesis to the tip and its result *replaces* the
@@ -773,59 +875,55 @@ class WalletService extends ChangeNotifier {
   /// the partial path already re-reads every earlier block to rebuild the global
   /// output index — so exactness is free here.
   Future<void> scanWalletOutputs() async {
-    if (!_state.isUnlocked || _state.seedHex == null) {
+    final key = _outputKey;
+    final seed = _state.seedHex;
+    if (key == null || seed == null) {
       throw Exception('Wallet not unlocked');
     }
 
     final (host, port) = _rpcHostPort;
-    final status = await rust.getChainStatus(host: host, port: port);
-
-    final result = await rust.scanWalletOutputs(
-      host: host,
-      port: port,
-      seedHex: _state.seedHex!,
-      account: 0,
-      startHeight: BigInt.zero,
-      endHeight: status.height,
-      isMainnet: _state.network == HyphenNetwork.mainnet,
-    );
-
-    await _storage.write(
-      key: '${_kOwnedOutputs}_${_state.activeWalletId}',
-      value: result.outputsJson,
-    );
-    await _storage.write(
-      key: '${_kLastScannedHeight}_${_state.activeWalletId}',
-      value: result.scannedHeight.toString(),
-    );
-
-    _updateOnChainBalance(result.outputsJson);
-    notifyListeners();
+    final isMainnet = _state.network == HyphenNetwork.mainnet;
+    final session = paymentSession;
+    await _outputs.run(() async {
+      if (paymentSession != session) return;
+      final result = await rust.scanWalletOutputs(
+        host: host,
+        port: port,
+        seedHex: seed,
+        account: 0,
+        startHeight: BigInt.zero,
+        endHeight: (BigInt.one << 64) - BigInt.one,
+        isMainnet: isMainnet,
+        cacheDirectory: (await getTemporaryDirectory()).path,
+      );
+      if (paymentSession != session) return;
+      await _storage.write(key: key, value: result.outputsJson);
+      if (paymentSession != session) return;
+      _receiptSession = session;
+      _lastReceipt = latestUnspentReceipt(
+        result.outputsJson,
+        result.scannedHeight,
+      );
+      _state = _state.copyWith(
+        onChainBalanceAtomic: result.totalBalance.toString(),
+        syncError: '',
+      );
+      notifyListeners();
+    });
   }
 
   /// Load cached outputs from storage and update balance.
   Future<void> _loadCachedOutputs() async {
-    final json = await _storage.read(
-      key: '${_kOwnedOutputs}_${_state.activeWalletId}',
-    );
-    _updateOnChainBalance(json);
+    final key = _outputKey;
+    if (key == null) return;
+    final json = await _storage.read(key: key);
+    if (_outputKey == key) _updateOnChainBalance(json);
   }
 
   void _updateOnChainBalance(String? json) {
-    if (json == null || json.isEmpty || json == '[]') {
-      _state = _state.copyWith(onChainBalanceAtomic: '0');
-      return;
-    }
-    try {
-      final list = jsonDecode(json) as List;
-      var total = BigInt.zero;
-      for (final item in list) {
-        total += BigInt.from(item['value'] as int? ?? 0);
-      }
-      _state = _state.copyWith(onChainBalanceAtomic: total.toString());
-    } catch (_) {
-      _state = _state.copyWith(onChainBalanceAtomic: '0');
-    }
+    _state = _state.copyWith(
+      onChainBalanceAtomic: _cachedBalance(json).toString(),
+    );
   }
 
   /// Get the current spendable balance by reading cached outputs.
@@ -833,17 +931,16 @@ class WalletService extends ChangeNotifier {
     if (!_state.isUnlocked || _state.activeWalletId == null) {
       return BigInt.zero;
     }
-    final json = await _storage.read(
-      key: '${_kOwnedOutputs}_${_state.activeWalletId}',
-    );
-    if (json == null || json.isEmpty || json == '[]') return BigInt.zero;
+    return _cachedBalance(await getOwnedOutputsJson());
+  }
 
+  BigInt _cachedBalance(String? json) {
+    if (json == null || json.isEmpty || json == '[]') return BigInt.zero;
     try {
       final list = jsonDecode(json) as List;
       var total = BigInt.zero;
       for (final item in list) {
-        final value = item['value'] as int? ?? 0;
-        total += BigInt.from(value);
+        total += BigInt.parse(item['value'].toString());
       }
       return total;
     } catch (_) {
@@ -853,13 +950,10 @@ class WalletService extends ChangeNotifier {
 
   /// Get cached owned outputs JSON for transaction building.
   Future<String> getOwnedOutputsJson() async {
-    if (!_state.isUnlocked || _state.activeWalletId == null) {
-      return '[]';
-    }
-    final json = await _storage.read(
-      key: '${_kOwnedOutputs}_${_state.activeWalletId}',
-    );
-    return json ?? '[]';
+    final key = _outputKey;
+    if (key == null) return '[]';
+    final json = await _storage.read(key: key);
+    return _outputKey == key ? json ?? '[]' : '[]';
   }
 
   /// Send a shielded transaction.
@@ -876,31 +970,46 @@ class WalletService extends ChangeNotifier {
     required BigInt feeAtomic,
     int? ringSize,
   }) async {
-    ringSize ??= networkRingSize;
-    if (!_state.isUnlocked || _state.seedHex == null) {
+    final size = ringSize ?? networkRingSize;
+    if (amountAtomic <= BigInt.zero ||
+        feeAtomic < BigInt.zero ||
+        (amountAtomic + feeAtomic).bitLength > 64) {
+      throw ArgumentError('Invalid payment amount or fee');
+    }
+    final key = _outputKey;
+    final seed = _state.seedHex;
+    if (key == null || seed == null) {
       throw Exception('Wallet not unlocked');
     }
 
     final (host, port) = _rpcHostPort;
-    final outputsJson = await getOwnedOutputsJson();
+    final session = paymentSession;
+    return _outputs.run(() async {
+      if (paymentSession != session) {
+        throw StateError('Wallet selection changed');
+      }
+      final outputsJson = await _storage.read(key: key) ?? '[]';
+      if (paymentSession != session) {
+        throw StateError('Wallet selection changed');
+      }
+      final result = await rust.sendTransaction(
+        host: host,
+        port: port,
+        seedHex: seed,
+        account: 0,
+        recipientAddress: recipientAddress,
+        amount: amountAtomic,
+        fee: feeAtomic,
+        ownedOutputsJson: outputsJson,
+        ringSize: size,
+      );
 
-    final result = await rust.sendTransaction(
-      host: host,
-      port: port,
-      seedHex: _state.seedHex!,
-      account: 0,
-      recipientAddress: recipientAddress,
-      amount: amountAtomic,
-      fee: feeAtomic,
-      ownedOutputsJson: outputsJson,
-      ringSize: ringSize,
-    );
+      if (result.accepted && result.spentIndicesCsv.isNotEmpty) {
+        await _removeSpentOutputs(key, result.spentIndicesCsv);
+      }
 
-    if (result.accepted && result.spentIndicesCsv.isNotEmpty) {
-      await removeSpentOutputs(result.spentIndicesCsv);
-    }
-
-    return result;
+      return result;
+    });
   }
 
   /// Drops the outputs consumed by a transaction the node accepted.
@@ -909,7 +1018,14 @@ class WalletService extends ChangeNotifier {
   /// balance is briefly understated instead of double counted; the next scan
   /// restores it.
   Future<void> removeSpentOutputs(String spentIndicesCsv) async {
-    if (spentIndicesCsv.isEmpty || _state.activeWalletId == null) return;
+    final key = _outputKey;
+    if (key != null) {
+      await _outputs.run(() => _removeSpentOutputs(key, spentIndicesCsv));
+    }
+  }
+
+  Future<void> _removeSpentOutputs(String key, String spentIndicesCsv) async {
+    if (spentIndicesCsv.isEmpty) return;
     final spent = <int>{};
     for (final raw in spentIndicesCsv.split(',')) {
       final index = int.tryParse(raw.trim());
@@ -917,9 +1033,7 @@ class WalletService extends ChangeNotifier {
     }
     if (spent.isEmpty) return;
 
-    final json = await _storage.read(
-      key: '${_kOwnedOutputs}_${_state.activeWalletId}',
-    );
+    final json = await _storage.read(key: key);
     if (json == null || json.isEmpty || json == '[]') return;
 
     final decoded = jsonDecode(json);
@@ -931,10 +1045,8 @@ class WalletService extends ChangeNotifier {
           item,
     ];
     final updated = jsonEncode(remaining);
-    await _storage.write(
-      key: '${_kOwnedOutputs}_${_state.activeWalletId}',
-      value: updated,
-    );
+    await _storage.write(key: key, value: updated);
+    if (_outputKey != key) return;
     _updateOnChainBalance(updated);
     notifyListeners();
   }
@@ -964,9 +1076,14 @@ class WalletService extends ChangeNotifier {
   /// Load transfer history from secure storage.
   Future<void> loadTransferHistory() async {
     final walletId = _state.activeWalletId;
-    if (walletId == null) return;
+    if (!_state.isUnlocked || walletId == null) return;
     final raw = await _storage.read(key: '${_kTransferHistory}_$walletId');
-    if (raw == null || raw.isEmpty) return;
+    if (!_state.isUnlocked ||
+        walletId != _state.activeWalletId ||
+        raw == null ||
+        raw.isEmpty) {
+      return;
+    }
     try {
       final list = (jsonDecode(raw) as List)
           .map((e) => TransferActivity.fromJson(e as Map<String, dynamic>))
@@ -1000,7 +1117,8 @@ class WalletService extends ChangeNotifier {
 
   Future<void> setCustomRpcEndpoint(String endpoint) async {
     await _storage.write(key: _kCustomRpcEndpoint, value: endpoint);
-    _state = _state.copyWith(rpcEndpoint: endpoint);
+    _state = _state.copyWith(rpcEndpoint: endpoint, onChainBalanceAtomic: '0');
+    await _loadCachedOutputs();
     await _refreshMinedRewards();
     notifyListeners();
   }
@@ -1044,13 +1162,15 @@ class WalletService extends ChangeNotifier {
       );
       _state = _state.copyWith(
         network: network,
+        onChainBalanceAtomic: '0',
         address: info.address,
         spendPublicHex: info.spendPublicHex,
         viewPublicHex: info.viewPublicHex,
       );
     } else {
-      _state = _state.copyWith(network: network);
+      _state = _state.copyWith(network: network, onChainBalanceAtomic: '0');
     }
+    await _loadCachedOutputs();
     await _refreshMinedRewards();
     notifyListeners();
   }
@@ -1070,7 +1190,9 @@ class WalletService extends ChangeNotifier {
   /// not blank a wallet — but the reason is recorded in [WalletState.syncError]
   /// so the UI can say why the numbers are stale.
   Future<void> refreshAll() async {
+    final key = _outputKey;
     await _loadCachedOutputs();
+    if (_outputKey != key) return;
     var syncError = '';
     if (_state.isUnlocked && _state.seedHex != null) {
       try {
@@ -1079,6 +1201,7 @@ class WalletService extends ChangeNotifier {
         syncError = error.toString();
       }
     }
+    if (_outputKey != key) return;
     _state = _state.copyWith(syncError: syncError);
     await _refreshMinedRewards();
     notifyListeners();
@@ -1120,6 +1243,7 @@ class WalletService extends ChangeNotifier {
   }
 
   Future<void> _refreshMinedRewards() async {
+    final session = paymentSession;
     final spendPubkey = _state.spendPublicHex;
     if (!_state.isUnlocked || spendPubkey == null || spendPubkey.length != 64) {
       _state = _state.copyWith(
@@ -1300,6 +1424,7 @@ class WalletService extends ChangeNotifier {
       }
     }
 
+    if (paymentSession != session) return;
     activities.sort((left, right) {
       final byHeight = right.height.compareTo(left.height);
       if (byHeight != 0) {
@@ -1329,6 +1454,7 @@ class WalletService extends ChangeNotifier {
         ? explorerConfirmed
         : poolDirectConfirmed;
 
+    if (!_state.isUnlocked || spendPubkey != _state.spendPublicHex) return;
     _state = _state.copyWith(
       minedRewardsAtomic: unifiedConfirmed.toString(),
       directPoolRewardsAtomic: directPoolRewardsAtomic,
@@ -1444,14 +1570,74 @@ class WalletService extends ChangeNotifier {
 
   void _startMinedRewardsPolling() {
     _minedRewardsTimer?.cancel();
-    _minedRewardsTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
-      await _refreshMinedRewards();
-      notifyListeners();
+    _paymentTimer?.cancel();
+    var scanning = false;
+    _paymentTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      final session = paymentSession;
+      if (session == null || scanning) return;
+      scanning = true;
+      try {
+        final (host, port) = _rpcHostPort;
+        final status = await rust.getChainStatus(host: host, port: port);
+        if (!timer.isActive || paymentSession != session) return;
+        final tip = (session.$1, session.$2, status.tipHashHex);
+        if (tip != _polledTip || _state.syncError.isNotEmpty) {
+          await scanWalletOutputs();
+          if (timer.isActive && paymentSession == session) _polledTip = tip;
+        }
+      } catch (error) {
+        if (timer.isActive &&
+            paymentSession == session &&
+            _state.syncError != error.toString()) {
+          _state = _state.copyWith(syncError: error.toString());
+          notifyListeners();
+        }
+      } finally {
+        scanning = false;
+      }
+    });
+    var refreshing = false;
+    _minedRewardsTimer = Timer.periodic(const Duration(seconds: 10), (
+      timer,
+    ) async {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        await _refreshMinedRewards();
+        if (timer.isActive) notifyListeners();
+      } finally {
+        refreshing = false;
+      }
     });
   }
 
   void _stopMinedRewardsPolling() {
+    _paymentTimer?.cancel();
+    _paymentTimer = null;
+    _polledTip = null;
+    _lastReceipt = null;
     _minedRewardsTimer?.cancel();
     _minedRewardsTimer = null;
   }
+}
+
+({String hash, BigInt amount, BigInt confirmations})? latestUnspentReceipt(
+  String outputs,
+  BigInt height,
+) {
+  String? latestHash;
+  var amount = BigInt.zero;
+  var confirmations = BigInt.zero;
+  for (final row in (jsonDecode(outputs) as List).reversed) {
+    final hash = row['received_tx_hash'] as String?;
+    if (hash == null) continue;
+    latestHash ??= hash;
+    if (hash != latestHash) break;
+    amount += BigInt.parse(row['value'].toString());
+    confirmations =
+        height - BigInt.from(row['block_height'] as int) + BigInt.one;
+  }
+  return latestHash == null
+      ? null
+      : (hash: latestHash, amount: amount, confirmations: confirmations);
 }

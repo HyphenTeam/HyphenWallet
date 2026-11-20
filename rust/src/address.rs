@@ -88,6 +88,15 @@ impl HyphenAddress {
         if payload[65..69] != expected_cs {
             return Err("checksum mismatch".into());
         }
+        for key in [view, spend] {
+            if key == [0; 32]
+                || curve25519_dalek::ristretto::CompressedRistretto(key)
+                    .decompress()
+                    .is_none()
+            {
+                return Err("invalid recipient public key".into());
+            }
+        }
         Ok(Self {
             version,
             view_public: view,
@@ -122,7 +131,8 @@ mod tests {
 
     #[test]
     fn roundtrip_mainnet() {
-        let addr = HyphenAddress::new_mainnet([0xAA; 32], [0xBB; 32]);
+        let (_, _, keys) = hyphen_crypto::stealth::generate_keys();
+        let addr = HyphenAddress::new_mainnet(keys.view_public, keys.spend_public);
         let encoded = addr.encode();
         assert!(encoded.starts_with("hy1"));
         let decoded = HyphenAddress::decode(&encoded).unwrap();
@@ -132,7 +142,8 @@ mod tests {
 
     #[test]
     fn roundtrip_testnet() {
-        let addr = HyphenAddress::new_testnet([0x11; 32], [0x22; 32]);
+        let (_, _, keys) = hyphen_crypto::stealth::generate_keys();
+        let addr = HyphenAddress::new_testnet(keys.view_public, keys.spend_public);
         let encoded = addr.encode();
         assert!(encoded.starts_with("hy1"));
         let decoded = HyphenAddress::decode(&encoded).unwrap();
@@ -143,6 +154,21 @@ mod tests {
     #[test]
     fn bad_prefix() {
         assert!(HyphenAddress::decode("xx1AAAA").is_err());
+    }
+
+    #[test]
+    fn valid_checksum_does_not_authorize_an_invalid_recipient() {
+        let (_, _, keys) = hyphen_crypto::stealth::generate_keys();
+        for bad in [[0; 32], [0xff; 32]] {
+            assert!(
+                HyphenAddress::decode(&HyphenAddress::new_testnet(bad, keys.spend_public).encode())
+                    .is_err()
+            );
+            assert!(
+                HyphenAddress::decode(&HyphenAddress::new_testnet(keys.view_public, bad).encode())
+                    .is_err()
+            );
+        }
     }
 
     #[test]

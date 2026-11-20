@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../l10n/app_localizations.dart';
 
 import '../theme/app_theme.dart';
@@ -159,10 +160,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         runSpacing: 8,
                         alignment: WrapAlignment.center,
                         children: [
-                          _featureBadge(
-                            Icons.shield_outlined,
-                            l10n.wotsSignatures,
-                          ),
                           _featureBadge(Icons.lock_outline, l10n.aesEncryption),
                           _featureBadge(
                             Icons.visibility_off_outlined,

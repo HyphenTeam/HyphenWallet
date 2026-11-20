@@ -32,9 +32,6 @@ subprojects {
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-            // nfc_manager 3.5.0 uses String.toLowerCase(Locale) which became
-            // ERROR in Kotlin 2.2 stdlib. API version 2.0 keeps it as WARNING.
-            apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
         }
     }
 }

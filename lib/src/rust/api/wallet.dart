@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `decrypt_current_wallet`, `decrypt_legacy_wallet`, `derive_argon2id_key`, `derive_legacy_wallet_key`, `legacy_xof_encrypt`, `wallet_from_mnemonic`
@@ -220,6 +221,7 @@ Future<WalletScanResult> scanWalletOutputs({
   required BigInt startHeight,
   required BigInt endHeight,
   required bool isMainnet,
+  String? cacheDirectory,
 }) => RustLib.instance.api.crateApiWalletScanWalletOutputs(
   host: host,
   port: port,
@@ -228,6 +230,7 @@ Future<WalletScanResult> scanWalletOutputs({
   startHeight: startHeight,
   endHeight: endHeight,
   isMainnet: isMainnet,
+  cacheDirectory: cacheDirectory,
 );
 
 /// Build and send a shielded transaction.

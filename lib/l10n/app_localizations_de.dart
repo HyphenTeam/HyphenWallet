@@ -1,5 +1,8 @@
+// ignore_for_file: deprecated_member_use
+
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -7,6 +10,12 @@ import 'app_localizations.dart';
 /// The translations for German (`de`).
 class AppLocalizationsDe extends AppLocalizations {
   AppLocalizationsDe([String locale = 'de']) : super(locale);
+
+  @override
+  String get latestUnspentReceived => 'Letzte Zahlung mit verfügbarem Guthaben';
+
+  @override
+  String get blockConfirmations => 'Blockbestätigungen';
 
   @override
   String get appTitle => 'Hyphen Wallet';
@@ -20,9 +29,6 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get welcomeSubtitle =>
       'Eine Desktop-Wallet für\nHyphen-Entwicklungsnetze.';
-
-  @override
-  String get wotsSignatures => 'WOTS+ Signaturen';
 
   @override
   String get aesEncryption => 'Authentifizierte Verschlüsselung';
@@ -55,21 +61,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get unlock => 'Entsperren';
 
   @override
-  String get forgotPasswordRestore =>
-      'Passwort vergessen? Mit Mnemonik wiederherstellen';
-
-  @override
-  String get resetWallet => 'Wallet zurücksetzen';
-
-  @override
-  String get resetWalletMessage =>
-      'Dadurch werden Ihre Wallet-Daten auf diesem Gerät gelöscht. Sie können sie mit Ihrer 24-Wort-Wiederherstellungsphrase wiederherstellen.\n\nStellen Sie sicher, dass Sie Ihre Mnemonik-Phrase haben, bevor Sie fortfahren.';
-
-  @override
   String get cancel => 'Abbrechen';
-
-  @override
-  String get resetAndRestore => 'Zurücksetzen & Wiederherstellen';
 
   @override
   String get createWallet => 'Wallet erstellen';
@@ -82,7 +74,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get writeDownWords =>
-      'Schreiben Sie diese 24 Wörter der Reihe nach auf und bewahren Sie sie an einem sicheren Ort auf. Dies ist der EINZIGE Weg, Ihre Wallet wiederherzustellen.';
+      'Sichern Sie diese 24 Wörter in der richtigen Reihenfolge und das ursprüngliche Passwort getrennt voneinander. Zur Wiederherstellung brauchen Sie beides.';
 
   @override
   String get neverSharePhrase =>
@@ -119,7 +111,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get passwordEncryptInfo =>
-      'Dieses Passwort verschlüsselt Ihre Wallet auf diesem Gerät. Sie benötigen es bei jedem Öffnen der App.';
+      'Das Passwort verschlüsselt die Wallet und bestimmt ihre Schlüssel. Geben Sie beim Wiederherstellen das ursprüngliche Passwort ein. Ein anderes Passwort ergibt eine andere Adresse.';
 
   @override
   String get confirmPassword => 'Passwort bestätigen';
@@ -145,7 +137,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get enterRecoveryPhrase =>
-      'Geben Sie Ihre 24-Wort-Wiederherstellungsphrase ein, getrennt durch Leerzeichen.';
+      'Geben Sie Ihre 12 oder 24 Wörter in der richtigen Reihenfolge mit Leerzeichen ein.';
 
   @override
   String get mnemonicHint => 'Wort1 Wort2 Wort3 ...';
@@ -338,7 +330,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get deleteWalletWarning =>
-      'Diese Aktion entfernt Ihre Wallet dauerhaft von diesem Gerät.\n\nStellen Sie sicher, dass Sie Ihre Wiederherstellungsphrase gesichert haben. Ohne sie gehen Ihre Mittel für immer verloren.';
+      'Die Wallet wird von diesem Gerät entfernt. Prüfen Sie zuerst, ob Ihre Wörter und das ursprüngliche Passwort dieselbe Empfangsadresse wiederherstellen.';
 
   @override
   String get delete => 'Löschen';
@@ -351,7 +343,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get neverShareWarning =>
-      'Teilen Sie Ihre Wiederherstellungsphrase niemals mit jemandem. Jeder mit diesen Wörtern kann auf Ihr Guthaben zugreifen.';
+      'Halten Sie Ihre Wörter geheim. Sichern Sie das ursprüngliche Passwort getrennt davon. Sie brauchen beides zur Wiederherstellung.';
 
   @override
   String get tapBelowToReveal => 'Tippen Sie unten zum Anzeigen';

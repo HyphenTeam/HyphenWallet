@@ -1,39 +1,40 @@
 name: hyphen_wallet
 description: "Experimental desktop wallet for the Hyphen blockchain"
-publish_to: 'none'
+publish_to: "none"
 
-version: 1.0.0+1
+version: 1.0.2+1
 
 environment:
-  sdk: ^3.12.0-210.2.beta
+  sdk: ^3.14.0
 
 dependencies:
   flutter:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  material_ui: ^1.11.1
+  cupertino_ui: ^1.1.7
 
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^2.0.0
   rust_lib_hyphen_wallet:
     path: rust_builder
   flutter_rust_bridge: 2.13.0
-  provider: ^6.1.2
-  flutter_secure_storage: ^9.2.4
+  provider: ^6.1.5+1
+  flutter_secure_storage: ^11.2.0
   qr_flutter: ^4.1.0
-  share_plus: ^10.1.4
-  local_auth: ^2.3.0
-  path_provider: ^2.1.5
-  dynamic_color: ^1.7.0
-  nfc_manager: ^3.5.0
-  intl: ^0.20.2
-  flutter_launcher_icons: ^0.14.3
+  share_plus: ^13.3.1
+  local_auth: ^3.0.2
+  path_provider: ^2.1.6
+  dynamic_color: ^2.1.0
+  nfc_manager: ^4.4.0
+  nfc_manager_ndef: ^1.1.0
+  intl: ^0.20.3
+  flutter_launcher_icons: ^0.14.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  integration_test:
-    sdk: flutter
 
 flutter:
   generate: true
@@ -41,6 +42,20 @@ flutter:
 
   assets:
     - assets/images/Hyphen.png
+    - assets/fonts/GoogleSans-OFL.txt
+
+  fonts:
+    - family: GoogleSans
+      fonts:
+        - asset: assets/fonts/GoogleSans-Variable.ttf
+    - family: HarmonyOSSans
+      fonts:
+        - asset: assets/fonts/HarmonyOS_SansSC_Regular.ttf
+          weight: 400
+        - asset: assets/fonts/HarmonyOS_SansSC_Medium.ttf
+          weight: 500
+        - asset: assets/fonts/HarmonyOS_SansSC_Bold.ttf
+          weight: 700
 
 flutter_launcher_icons:
   android: true

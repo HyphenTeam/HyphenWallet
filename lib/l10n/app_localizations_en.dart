@@ -1,5 +1,8 @@
+// ignore_for_file: deprecated_member_use
+
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -7,6 +10,12 @@ import 'app_localizations.dart';
 /// The translations for English (`en`).
 class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
+
+  @override
+  String get latestUnspentReceived => 'Latest unspent payment';
+
+  @override
+  String get blockConfirmations => 'Block confirmations';
 
   @override
   String get appTitle => 'Hyphen Wallet';
@@ -20,9 +29,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get welcomeSubtitle =>
       'A desktop wallet for\nHyphen development networks.';
-
-  @override
-  String get wotsSignatures => 'WOTS+ Signatures';
 
   @override
   String get aesEncryption => 'Authenticated Encryption';
@@ -55,20 +61,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get unlock => 'Unlock';
 
   @override
-  String get forgotPasswordRestore => 'Forgot password? Restore with mnemonic';
-
-  @override
-  String get resetWallet => 'Reset Wallet';
-
-  @override
-  String get resetWalletMessage =>
-      'This will delete your current wallet data on this device. You can restore it using your 24-word recovery phrase.\n\nMake sure you have your mnemonic phrase before proceeding.';
-
-  @override
   String get cancel => 'Cancel';
-
-  @override
-  String get resetAndRestore => 'Reset & Restore';
 
   @override
   String get createWallet => 'Create Wallet';
@@ -81,7 +74,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get writeDownWords =>
-      'Write down these 24 words in order and keep them in a safe place. This is the ONLY way to recover your wallet.';
+      'Back up these 24 words in order. Store the original wallet password separately. You need both to restore the same address.';
 
   @override
   String get neverSharePhrase =>
@@ -118,7 +111,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get passwordEncryptInfo =>
-      'This password will encrypt your wallet on this device. You\'ll need it each time you open the app.';
+      'This password protects the local wallet and determines its keys. To restore an address, enter the exact password used at creation. A different password gives a different address.';
 
   @override
   String get confirmPassword => 'Confirm Password';
@@ -144,7 +137,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get enterRecoveryPhrase =>
-      'Enter your 24-word recovery phrase, separated by spaces.';
+      'Enter your 12 or 24 recovery words in order, separated by spaces.';
 
   @override
   String get mnemonicHint => 'word1 word2 word3 ...';
@@ -335,7 +328,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deleteWalletWarning =>
-      'This action will permanently remove your wallet from this device.\n\nMake sure you have backed up your recovery phrase. Without it, your funds will be lost forever.';
+      'This removes the wallet from this device. Before deleting it, verify that your recovery phrase and original password restore the same receiving address.';
 
   @override
   String get delete => 'Delete';
@@ -348,7 +341,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get neverShareWarning =>
-      'Never share your recovery phrase with anyone. Anyone with these words can access your funds.';
+      'Keep the recovery phrase private and back up the original wallet password separately. Restoration requires both.';
 
   @override
   String get tapBelowToReveal => 'Tap below to reveal';

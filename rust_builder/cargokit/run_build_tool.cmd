@@ -45,6 +45,8 @@ REM To detect changes in package we compare output of DIR /s (recursive)
 set PREV_PACKAGE_INFO=.dart_tool\package_info.prev
 set CUR_PACKAGE_INFO=.dart_tool\package_info.cur
 
+if not exist .dart_tool mkdir .dart_tool
+
 DIR "%BUILD_TOOL_PKG_DIR%" /s > "%CUR_PACKAGE_INFO%_orig"
 
 REM Last line in dir output is free space on harddrive. That is bound to
@@ -75,17 +77,20 @@ If %ERRORLEVEL% neq 0 (
 
 REM There is no CUR_PACKAGE_INFO it was renamed in previous step to %PREV_PACKAGE_INFO%
 REM which means  we need to do pub get and precompile
-if not exist "%PRECOMPILED%" (
-    echo Running pub get in "%cd%"
-    "%DART%" pub get --no-precompile
-    "%DART%" compile kernel bin/build_tool_runner.dart
-)
-
+if not exist "%PRECOMPILED%" goto compile
 "%DART%" "%PRECOMPILED%" %*
+set BUILD_RESULT=%ERRORLEVEL%
+REM 253 means the cached snapshot belongs to another Dart SDK.
+if %BUILD_RESULT% equ 253 goto compile
+exit /b %BUILD_RESULT%
 
-REM 253 means invalid snapshot version.
-If %ERRORLEVEL% equ 253 (
-    "%DART%" pub get --no-precompile
-    "%DART%" compile kernel bin/build_tool_runner.dart
-    "%DART%" "%PRECOMPILED%" %*
-)
+:compile
+"%DART%" pub get
+if errorlevel 1 goto failed
+"%DART%" compile kernel bin/build_tool_runner.dart
+if errorlevel 1 goto failed
+"%DART%" "%PRECOMPILED%" %*
+exit /b %ERRORLEVEL%
+
+:failed
+exit /b 1

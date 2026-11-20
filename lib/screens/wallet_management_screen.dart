@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../l10n/app_localizations.dart';
+
 import 'package:provider/provider.dart';
 
 import '../services/wallet_service.dart';
@@ -156,9 +158,8 @@ class WalletManagementScreen extends StatelessWidget {
     AppLocalizations l10n,
   ) {
     wallet.switchWallet(w.id);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(l10n.walletSwitched(w.name))));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l10n.walletSwitched(w.name))));
     Navigator.of(context).pushNamedAndRemoveUntil('/unlock', (_) => false);
   }
 
@@ -192,9 +193,8 @@ class WalletManagementScreen extends StatelessWidget {
               if (name.isNotEmpty) {
                 wallet.renameWallet(w.id, name);
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text(l10n.walletRenamed)));
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(SnackBar(content: Text(l10n.walletRenamed)));
               }
             },
             child: Text(l10n.rename),
@@ -212,9 +212,8 @@ class WalletManagementScreen extends StatelessWidget {
   ) {
     final cs = Theme.of(context).colorScheme;
     if (w.id == wallet.state.activeWalletId) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.cannotDeleteActiveWallet)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.cannotDeleteActiveWallet)));
       return;
     }
     showDialog(
@@ -232,9 +231,8 @@ class WalletManagementScreen extends StatelessWidget {
               Navigator.pop(ctx);
               await wallet.deleteWalletById(w.id);
               if (context.mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text(l10n.walletDeleted)));
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(SnackBar(content: Text(l10n.walletDeleted)));
               }
             },
             child: Text(l10n.delete, style: TextStyle(color: cs.error)),

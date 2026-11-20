@@ -15,11 +15,9 @@
 use crate::address::HyphenAddress;
 use crate::bip39;
 use crate::crypto;
-use crate::keys::{MasterKey, COIN_TYPE};
+use crate::keys::{COIN_TYPE, MasterKey};
 use crate::wots;
 use rand::Rng;
-
-// --- Data structures exposed to Flutter ---
 
 /// Complete wallet creation result.
 pub struct WalletCreateResult {
@@ -54,8 +52,6 @@ pub struct EncryptedWallet {
     pub data: Vec<u8>,
 }
 
-// --- BIP39 Mnemonic Operations ---
-
 /// Generate a new BIP39 mnemonic phrase.
 ///
 /// `word_count`: 12, 15, 18, 21, or 24.
@@ -71,8 +67,6 @@ pub fn generate_mnemonic(word_count: u8) -> Result<String, String> {
 pub fn validate_mnemonic(mnemonic: String) -> bool {
     bip39::validate_mnemonic(&mnemonic)
 }
-
-// --- Wallet Creation and Restoration ---
 
 /// Create a new wallet with a fresh 24-word mnemonic.
 ///
@@ -100,9 +94,8 @@ pub fn create_wallet_with_password(password: String) -> Result<WalletCreateResul
 
 /// Restore a wallet from an existing BIP39 mnemonic.
 ///
-/// `passphrase` is the optional BIP39 passphrase (empty string if not used).
-/// If a password was used during creation, it must be the same password here —
-/// it will be transformed through the same historical algorithm.
+/// Pass the original passphrase bytes. Flutter passes the result of
+/// `pq_transform_password`. `restore_wallet_with_password` accepts the original password.
 pub fn restore_wallet(mnemonic: String, passphrase: String) -> Result<WalletCreateResult, String> {
     if !bip39::validate_mnemonic(&mnemonic) {
         return Err("invalid mnemonic phrase".into());
@@ -154,7 +147,8 @@ fn wallet_from_mnemonic(
     mnemonic: String,
     passphrase: String,
 ) -> Result<WalletCreateResult, String> {
-    let seed = bip39::mnemonic_to_seed(&mnemonic, &passphrase);
+    let passphrase = zeroize::Zeroizing::new(passphrase);
+    let seed = zeroize::Zeroizing::new(bip39::mnemonic_to_seed(&mnemonic, &passphrase));
     let mk = MasterKey::from_seed(&seed);
     let keys = mk.derive_default();
 
@@ -166,15 +160,13 @@ fn wallet_from_mnemonic(
 
     Ok(WalletCreateResult {
         mnemonic,
-        seed_hex: hex::encode(seed),
+        seed_hex: hex::encode(seed.as_slice()),
         address_mainnet: addr_main.encode(),
         address_testnet: addr_test.encode(),
         view_public_hex: hex::encode(view_pub),
         spend_public_hex: hex::encode(spend_pub),
     })
 }
-
-// --- Key Derivation (BIP44 Paths) ---
 
 /// Derive keys for a specific BIP44 path: m/44'/868'/account'/change/index.
 ///
@@ -187,14 +179,7 @@ pub fn derive_key(
     index: u32,
     is_mainnet: bool,
 ) -> Result<KeyPairInfo, String> {
-    let seed_bytes = hex::decode(&seed_hex).map_err(|e| format!("invalid seed hex: {e}"))?;
-    if seed_bytes.len() != 64 {
-        return Err(format!("seed must be 64 bytes, got {}", seed_bytes.len()));
-    }
-    let mut seed = [0u8; 64];
-    seed.copy_from_slice(&seed_bytes);
-
-    let mk = MasterKey::from_seed(&seed);
+    let mk = MasterKey::from_hex(seed_hex)?;
     let keys = mk.derive_bip44(account, change, index);
 
     let view_pub = keys.view_public.compress().to_bytes();
@@ -248,16 +233,13 @@ pub fn mnemonic_to_seed_hex(mnemonic: String, passphrase: String) -> Result<Stri
     if !bip39::validate_mnemonic(&mnemonic) {
         return Err("invalid mnemonic phrase".into());
     }
-    let seed = bip39::mnemonic_to_seed(&mnemonic, &passphrase);
-    Ok(hex::encode(seed))
+    let mnemonic = zeroize::Zeroizing::new(mnemonic);
+    let passphrase = zeroize::Zeroizing::new(passphrase);
+    let seed = zeroize::Zeroizing::new(bip39::mnemonic_to_seed(&mnemonic, &passphrase));
+    Ok(hex::encode(seed.as_slice()))
 }
 
-// --- Experimental message-signing operations ---
-
-/// Sign a message with the experimental Ed25519 + WOTS encoding.
-///
-/// The WOTS public key is not anchored by chain consensus or a persistent
-/// identity registry, and this stateless API cannot enforce one-time use.
+/// Retained for bridge compatibility. The stateless WOTS signer is disabled.
 pub fn sign_message(
     seed_hex: String,
     account: u32,
@@ -265,41 +247,8 @@ pub fn sign_message(
     index: u32,
     message: Vec<u8>,
 ) -> Result<SignResult, String> {
-    let seed_bytes = hex::decode(&seed_hex).map_err(|e| format!("invalid seed hex: {e}"))?;
-    if seed_bytes.len() != 64 {
-        return Err(format!("seed must be 64 bytes, got {}", seed_bytes.len()));
-    }
-    let mut seed = [0u8; 64];
-    seed.copy_from_slice(&seed_bytes);
-
-    let mk = MasterKey::from_seed(&seed);
-    let keys = mk.derive_bip44(account, change, index);
-
-    // Derive Ed25519 signing key
-    let ed_seed: [u8; 32] =
-        *crypto::blake3_hash_many(&[b"Hyphen_ed25519_derive", keys.spend_secret.as_bytes()])
-            .as_bytes();
-    let ed_sk = ed25519_dalek::SigningKey::from_bytes(&ed_seed);
-
-    // Derive WOTS+ signing key
-    let wots_seed: [u8; 32] =
-        *crypto::blake3_hash_many(&[b"Hyphen_WOTS_derive_seed", keys.spend_secret.as_bytes()])
-            .as_bytes();
-    let wots_addr: [u8; 32] =
-        *crypto::blake3_hash_many(&[b"Hyphen_WOTS_derive_addr", keys.spend_secret.as_bytes()])
-            .as_bytes();
-    let wots_sk = wots::WotsSecretKey::from_seed(wots_seed, wots_addr);
-
-    // Create hybrid signature
-    let hybrid = wots::HybridSignature::sign(&message, &ed_sk, &wots_sk);
-
-    Ok(SignResult {
-        ed25519_signature_hex: hex::encode(hybrid.ed25519_sig),
-        ed25519_public_hex: hex::encode(hybrid.ed25519_pubkey),
-        wots_signature_hex: hex::encode(hybrid.wots_sig.to_bytes()),
-        wots_public_hash_hex: hex::encode(hybrid.wots_pubkey.key_hash),
-        wots_addr_seed_hex: hex::encode(hybrid.wots_pubkey.addr_seed),
-    })
+    drop((seed_hex, account, change, index, message));
+    Err("WOTS message signing requires persistent one-time key management".into())
 }
 
 /// Verify the syntax and equations of an experimental dual signature.
@@ -360,8 +309,6 @@ pub fn verify_signature(
     }
 }
 
-// --- Address Validation ---
-
 /// Validate a Hyphen address string.
 pub fn validate_address(address: String) -> bool {
     HyphenAddress::decode(&address).is_ok()
@@ -372,8 +319,6 @@ pub fn is_mainnet_address(address: String) -> Result<bool, String> {
     let addr = HyphenAddress::decode(&address)?;
     Ok(addr.is_mainnet())
 }
-
-// --- Encrypted Wallet Storage ---
 
 const WALLET_MAGIC: &[u8; 8] = b"HYWLT001";
 const WALLET_HEADER_LEN: usize = 64;
@@ -531,8 +476,6 @@ fn legacy_xof_encrypt(key: &[u8; 32], data: &[u8]) -> Vec<u8> {
     out
 }
 
-// --- Utility Functions ---
-
 /// Get wallet version info.
 pub fn wallet_version() -> String {
     "Hyphen Wallet v0.1.0 (experimental)".to_string()
@@ -547,8 +490,6 @@ pub fn get_coin_type() -> u32 {
 pub fn blake3_hash(data: Vec<u8>) -> String {
     hex::encode(crypto::blake3_hash(&data).as_bytes())
 }
-
-// --- Transfer Operations ---
 
 /// Result of a chain status query.
 pub struct ChainStatusResult {
@@ -588,6 +529,7 @@ pub fn get_chain_status(host: String, port: u16) -> Result<ChainStatusResult, St
 ///
 /// Downloads blocks from `start_height` to `end_height`, checking each
 /// output against the wallet's view key. Returns owned outputs as JSON.
+#[allow(clippy::too_many_arguments)]
 pub fn scan_wallet_outputs(
     host: String,
     port: u16,
@@ -596,15 +538,16 @@ pub fn scan_wallet_outputs(
     start_height: u64,
     end_height: u64,
     is_mainnet: bool,
+    cache_directory: Option<String>,
 ) -> Result<WalletScanResult, String> {
-    let result = crate::transfer::scan_wallet_outputs(
+    let result = crate::transfer::scan_outputs_in(
         host,
         port,
         seed_hex,
         account,
-        start_height,
-        end_height,
+        start_height..=end_height,
         is_mainnet,
+        cache_directory.as_deref().map(std::path::Path::new),
     )?;
     Ok(WalletScanResult {
         total_balance: result.total_balance,
@@ -657,6 +600,29 @@ mod encrypted_wallet_tests {
     use super::*;
 
     const MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    #[test]
+    fn stateless_message_signing_refuses_a_valid_derivation_path() {
+        let result = sign_message(hex::encode([42; 64]), 0, 0, 0, b"fixture".to_vec());
+        assert!(matches!(result, Err(reason) if reason.contains("one-time key management")));
+    }
+
+    #[test]
+    fn flutter_password_restores_the_historical_receiving_address() {
+        let wallet =
+            restore_wallet(MNEMONIC.into(), pq_transform_password("public-fixture")).unwrap();
+        assert_eq!(
+            wallet.seed_hex,
+            "06cf316d51866398b413ce1635c8cf3ee0dc5956ee9feaceb4ad00f83085adddb8725f92df511a50cb8b10641557ed2ded2620348a493ac2679a245d7283eb79"
+        );
+        assert_eq!(
+            wallet.address_testnet,
+            "hy12LqVc3VPiSoMTgxpVubj4yusXPYoFKERshuLsEWD88ZXRKwPEeLcgBXoJck7CQ1FTBhjdtVttHmTFBewYeR7VDtxSvKkeE"
+        );
+        let different =
+            restore_wallet_with_password(MNEMONIC.into(), "different-fixture".into()).unwrap();
+        assert_ne!(wallet.address_testnet, different.address_testnet);
+    }
 
     #[test]
     fn current_envelope_roundtrips_and_authenticates_every_byte() {

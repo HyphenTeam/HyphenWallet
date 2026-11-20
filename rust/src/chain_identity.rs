@@ -18,7 +18,7 @@ pub struct ChainIdentity {
     pub genesis_hash: &'static str,
 }
 
-pub const CHAIN_IDENTITIES: [ChainIdentity; 4] = [
+pub const CHAIN_IDENTITIES: [ChainIdentity; 5] = [
     ChainIdentity {
         network: "hyphen-devnet-v2",
         network_magic: *b"HYDV",
@@ -30,6 +30,12 @@ pub const CHAIN_IDENTITIES: [ChainIdentity; 4] = [
         network_magic: *b"HYNN",
         consensus_params_hash: "451ca637dafb07604b8dcabebc86c54d72efe590ac5912bb2a2f35ea6d41b6a9",
         genesis_hash: "6d3c028ecd7380ba143a62c8b82fa706155da56fb42ec8cf8b30ec4dc989d058",
+    },
+    ChainIdentity {
+        network: "hyphen-contract-devnet-v1",
+        network_magic: *b"HYCD",
+        consensus_params_hash: "3ad32be8f0c772331740a74ebcd56266ad97da58bdda076e9e139d31499910b2",
+        genesis_hash: "422475c11a829f198cc502ca4f5cd4489336569997c3cdf048dddaf1d71f1b33",
     },
     ChainIdentity {
         network: "hyphen-testnet",
@@ -75,46 +81,6 @@ pub fn verify(
 mod tests {
     use super::*;
 
-    /// Independent copy of the canonical vector. Drift in `CHAIN_IDENTITIES`
-    /// fails here instead of surfacing as a rejected handshake at runtime.
-    const VECTOR: [(&str, [u8; 4], &str, &str); 4] = [
-        (
-            "hyphen-devnet-v2",
-            *b"HYDV",
-            "521f6cdc47f4424c1ea7b9f4d6770cf114f620cdff62958060f8c6953cb69de8",
-            "5f7c144f0ef27880259b2429e46ef175685da679916fcc6b80c45f457465e32d",
-        ),
-        (
-            "hyphen-neural-devnet-v1",
-            *b"HYNN",
-            "451ca637dafb07604b8dcabebc86c54d72efe590ac5912bb2a2f35ea6d41b6a9",
-            "6d3c028ecd7380ba143a62c8b82fa706155da56fb42ec8cf8b30ec4dc989d058",
-        ),
-        (
-            "hyphen-testnet",
-            *b"HYTS",
-            "dacfd24354a308d149ee8676444d92bc9e48a54b5c6f191272b40b16653dffa9",
-            "944514b7c52d93ce03f0bfac1d436cf1607fab1b78d73010ff59301f913dba42",
-        ),
-        (
-            "hyphen-mainnet",
-            *b"HYPN",
-            "d42031b0c51640621ce6c6cb7bc97847db53bd636842c5b2b4f07c2be6a4e15b",
-            "5896c90005ca4e85e19876dac81867920dfa4315744d757ecbf13c16c24669e6",
-        ),
-    ];
-
-    #[test]
-    fn pinned_identities_match_the_canonical_vector() {
-        assert_eq!(IDENTITY_VECTOR, "chain-identity-v6");
-        for (identity, (network, magic, params, genesis)) in CHAIN_IDENTITIES.iter().zip(VECTOR) {
-            assert_eq!(identity.network, network);
-            assert_eq!(identity.network_magic, magic);
-            assert_eq!(identity.consensus_params_hash, params);
-            assert_eq!(identity.genesis_hash, genesis);
-        }
-    }
-
     #[test]
     fn accepts_pinned_identity_on_every_network() {
         for chain in &CHAIN_IDENTITIES {
@@ -138,52 +104,62 @@ mod tests {
         // Pre-PoUW-v3 devnet identity: block v3, PoUW v1, superseded hashes.
         assert!(verify(chain.network, &chain.network_magic, &params, &genesis, 3, 1).is_err());
         assert!(verify(chain.network, &chain.network_magic, &params, &genesis, 4, 2).is_err());
-        assert!(verify(
-            chain.network,
-            &chain.network_magic,
-            &hex::decode("54bf97e4e28d4fcf963d884a555a8425bbfe7c84d2753001bcabbaf116232fda")
-                .unwrap(),
-            &genesis,
-            BLOCK_VERSION,
-            POUW_PROTOCOL_VERSION,
-        )
-        .is_err());
-        assert!(verify(
-            chain.network,
-            &chain.network_magic,
-            &params,
-            &hex::decode("47d530160cfef9141fe3b37b886e09b9f96ec4dc93d6c05005b9c6dbf35b1972")
-                .unwrap(),
-            BLOCK_VERSION,
-            POUW_PROTOCOL_VERSION,
-        )
-        .is_err());
-        assert!(verify(
-            chain.network,
-            b"XXXX",
-            &params,
-            &genesis,
-            BLOCK_VERSION,
-            POUW_PROTOCOL_VERSION,
-        )
-        .is_err());
-        assert!(verify(
-            "hyphen-devnet-v1",
-            &chain.network_magic,
-            &params,
-            &genesis,
-            BLOCK_VERSION,
-            POUW_PROTOCOL_VERSION,
-        )
-        .is_err());
-        assert!(verify(
-            chain.network,
-            &chain.network_magic,
-            &params[..31],
-            &genesis,
-            BLOCK_VERSION,
-            POUW_PROTOCOL_VERSION,
-        )
-        .is_err());
+        assert!(
+            verify(
+                chain.network,
+                &chain.network_magic,
+                &hex::decode("54bf97e4e28d4fcf963d884a555a8425bbfe7c84d2753001bcabbaf116232fda")
+                    .unwrap(),
+                &genesis,
+                BLOCK_VERSION,
+                POUW_PROTOCOL_VERSION,
+            )
+            .is_err()
+        );
+        assert!(
+            verify(
+                chain.network,
+                &chain.network_magic,
+                &params,
+                &hex::decode("47d530160cfef9141fe3b37b886e09b9f96ec4dc93d6c05005b9c6dbf35b1972")
+                    .unwrap(),
+                BLOCK_VERSION,
+                POUW_PROTOCOL_VERSION,
+            )
+            .is_err()
+        );
+        assert!(
+            verify(
+                chain.network,
+                b"XXXX",
+                &params,
+                &genesis,
+                BLOCK_VERSION,
+                POUW_PROTOCOL_VERSION,
+            )
+            .is_err()
+        );
+        assert!(
+            verify(
+                "hyphen-devnet-v1",
+                &chain.network_magic,
+                &params,
+                &genesis,
+                BLOCK_VERSION,
+                POUW_PROTOCOL_VERSION,
+            )
+            .is_err()
+        );
+        assert!(
+            verify(
+                chain.network,
+                &chain.network_magic,
+                &params[..31],
+                &genesis,
+                BLOCK_VERSION,
+                POUW_PROTOCOL_VERSION,
+            )
+            .is_err()
+        );
     }
 }

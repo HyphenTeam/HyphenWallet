@@ -4,8 +4,7 @@
 // path structure: m / purpose' / coin_type' / account' / change / index
 //
 // ICD uses Pedersen commitments on Ristretto255 for key derivation instead
-// of HMAC-based chain codes (BIP32). This provides the same hierarchical
-// structure with stronger mathematical security guarantees.
+// of HMAC-based chain codes (BIP32). Its derivation is specific to Hyphen.
 //
 // The derivation path follows BIP44:
 //   m/44'/868'/account'/0/index    (external addresses)
@@ -31,13 +30,11 @@ pub const COIN_TYPE: u32 = 868;
 /// Master key derived from BIP39 seed.
 #[derive(Clone)]
 pub struct MasterKey {
-    seed: [u8; 64],
     master_scalar: Scalar,
 }
 
 impl Zeroize for MasterKey {
     fn zeroize(&mut self) {
-        self.seed.zeroize();
         self.master_scalar.zeroize();
     }
 }
@@ -71,13 +68,17 @@ impl Drop for DerivedKeyPair {
 }
 
 impl MasterKey {
+    pub(crate) fn from_hex(encoded: String) -> Result<Self, String> {
+        let encoded = zeroize::Zeroizing::new(encoded);
+        let mut seed = zeroize::Zeroizing::new([0u8; 64]);
+        hex::decode_to_slice(encoded.as_bytes(), seed.as_mut_slice())
+            .map_err(|_| "expected 64-byte hex seed".to_string())?;
+        Ok(Self::from_seed(&seed))
+    }
     /// Create a master key from a BIP39 seed (64 bytes).
     pub fn from_seed(seed: &[u8; 64]) -> Self {
         let master_scalar = hash_to_scalar(b"Hyphen_master_v1", seed);
-        Self {
-            seed: *seed,
-            master_scalar,
-        }
+        Self { master_scalar }
     }
 
     /// ICD derivation: project parent scalar through a Pedersen commitment

@@ -8,16 +8,10 @@
 //
 // Seed derivation: PBKDF2-HMAC-SHA512(mnemonic, "mnemonic" + passphrase, 2048)
 
-use hmac::Hmac;
-use rand::Rng;
 use sha2::{Digest, Sha256};
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
-type HmacSha512 = Hmac<sha2::Sha512>;
-
-/// BIP39 English word list (2048 words, sorted).
-/// SHA-256 of the newline-joined list: 2f5eed53a4727b4bf8880d8f3f199d68
-/// Every BIP39-compliant wallet uses this exact word list.
+/// BIP39 English word list.
 const WORDLIST: &str = include_str!("bip39_english.txt");
 
 /// Parse the embedded word list into a slice.
@@ -39,12 +33,10 @@ pub fn generate_mnemonic(word_count: usize) -> Result<String, String> {
     };
     let entropy_bytes = entropy_bits / 8;
 
-    let mut entropy = vec![0u8; entropy_bytes];
-    rand::rng().fill_bytes(&mut entropy);
-
-    let mnemonic = entropy_to_mnemonic(&entropy)?;
-    entropy.zeroize();
-    Ok(mnemonic)
+    let mut entropy = Zeroizing::new(vec![0u8; entropy_bytes]);
+    getrandom::fill(&mut entropy)
+        .map_err(|error| format!("system entropy unavailable: {error}"))?;
+    entropy_to_mnemonic(&entropy)
 }
 
 /// Convert raw entropy bytes to a BIP39 mnemonic phrase.
@@ -68,7 +60,7 @@ pub fn entropy_to_mnemonic(entropy: &[u8]) -> Result<String, String> {
 
     // Build combined bit string: entropy || checksum
     let total_bits = ent_bits + cs_bits;
-    let mut bits = Vec::with_capacity(total_bits);
+    let mut bits = Zeroizing::new(Vec::with_capacity(total_bits));
 
     for byte in entropy {
         for bit in (0..8).rev() {
@@ -110,7 +102,7 @@ pub fn validate_mnemonic(phrase: &str) -> bool {
     }
 
     // Look up each word's index
-    let mut indices = Vec::with_capacity(word_count);
+    let mut indices = Zeroizing::new(Vec::with_capacity(word_count));
     for w in &mnemonic_words {
         match words.iter().position(|&wl| wl == *w) {
             Some(idx) => indices.push(idx as u16),
@@ -120,8 +112,8 @@ pub fn validate_mnemonic(phrase: &str) -> bool {
 
     // Convert indices to bits
     let total_bits = word_count * 11;
-    let mut bits = Vec::with_capacity(total_bits);
-    for &idx in &indices {
+    let mut bits = Zeroizing::new(Vec::with_capacity(total_bits));
+    for &idx in indices.iter() {
         for bit in (0..11).rev() {
             bits.push(((idx >> bit) & 1) as u8);
         }
@@ -131,13 +123,13 @@ pub fn validate_mnemonic(phrase: &str) -> bool {
     let cs_bits = total_bits - ent_bits;
 
     // Extract entropy bytes
-    let mut entropy = vec![0u8; ent_bits / 8];
+    let mut entropy = Zeroizing::new(vec![0u8; ent_bits / 8]);
     for i in 0..ent_bits {
         entropy[i / 8] |= bits[i] << (7 - (i % 8));
     }
 
     // Compute checksum
-    let hash = Sha256::digest(&entropy);
+    let hash = Sha256::digest(entropy.as_slice());
 
     // Verify checksum bits
     for i in 0..cs_bits {
@@ -150,11 +142,10 @@ pub fn validate_mnemonic(phrase: &str) -> bool {
     true
 }
 
-/// Derive a 512-bit seed from a BIP39 mnemonic and passphrase.
-///
-/// Uses PBKDF2-HMAC-SHA512 with 2048 iterations as specified by BIP39.
+/// Historical Hyphen seed derivation. PBKDF2 receives the exact UTF-8 bytes,
+/// including internal whitespace and the original Unicode normalization form.
 pub fn mnemonic_to_seed(mnemonic: &str, passphrase: &str) -> [u8; 64] {
-    let salt = format!("mnemonic{}", passphrase);
+    let salt = Zeroizing::new(format!("mnemonic{}", passphrase));
     let mut seed = [0u8; 64];
     pbkdf2::pbkdf2_hmac::<sha2::Sha512>(mnemonic.as_bytes(), salt.as_bytes(), 2048, &mut seed);
     seed
@@ -195,11 +186,33 @@ mod tests {
     }
 
     #[test]
-    fn seed_derivation_deterministic() {
-        let m = generate_mnemonic(12).unwrap();
-        let s1 = mnemonic_to_seed(&m, "");
-        let s2 = mnemonic_to_seed(&m, "");
-        assert_eq!(s1, s2);
+    fn bip39_english_reference_vector() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        assert_eq!(entropy_to_mnemonic(&[0; 16]).unwrap(), phrase);
+        assert!(validate_mnemonic(phrase));
+        assert_eq!(
+            hex::encode(mnemonic_to_seed(phrase, "TREZOR")),
+            "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
+        );
+    }
+
+    #[test]
+    fn historical_seed_preserves_whitespace_and_unicode_bytes() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let spaced = phrase.replacen(' ', "  ", 1);
+        assert!(validate_mnemonic(&spaced));
+        assert_eq!(
+            hex::encode(mnemonic_to_seed(&spaced, "\u{e9}")),
+            "6b4cd956d415797eba1e6f2800813ec09e545c227c78374acf761f1ca0cb336d48f647d202fe594696ef2129592da4d9150b1fcb0dde7af558a284e9853e91de"
+        );
+        assert_eq!(
+            hex::encode(mnemonic_to_seed(phrase, "e\u{301}")),
+            "f37f8652bf7004d4bd4ba7702e70e647f54965758656423dde58d64fa725c1e8be1b0416864e10f714c0730e46f9676079b4fd4f72fcf0c09a120ae65589c091"
+        );
+        assert_ne!(
+            mnemonic_to_seed(phrase, "\u{e9}"),
+            mnemonic_to_seed(phrase, "e\u{301}")
+        );
     }
 
     #[test]

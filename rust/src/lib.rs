@@ -63,8 +63,10 @@ mod codec_compatibility_tests {
         );
         let mut trailing = expected;
         trailing.push(0);
-        assert!(crate::wire_config(crate::DEFAULT_WIRE_BYTES)
-            .deserialize::<CodecFixture>(&trailing)
-            .is_err());
+        assert!(
+            crate::wire_config(crate::DEFAULT_WIRE_BYTES)
+                .deserialize::<CodecFixture>(&trailing)
+                .is_err()
+        );
     }
 }

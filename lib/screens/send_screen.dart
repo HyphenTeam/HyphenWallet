@@ -1,10 +1,15 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../l10n/app_localizations.dart';
+
 import 'package:provider/provider.dart';
 import 'package:nfc_manager/nfc_manager.dart';
+import 'package:nfc_manager_ndef/nfc_manager_ndef.dart';
 
+import '../services/nfc_address.dart';
+import '../services/payment_amount.dart';
 import '../services/wallet_service.dart';
 import '../widgets/gradient_button.dart';
 
@@ -20,9 +25,11 @@ class _SendScreenState extends State<SendScreen> {
   final _addressController = TextEditingController();
   final _amountController = TextEditingController();
   bool _isSending = false;
+  bool _scanningNfc = false;
 
   @override
   void dispose() {
+    if (_scanningNfc) NfcManager.instance.stopSession();
     _addressController.dispose();
     _amountController.dispose();
     super.dispose();
@@ -30,12 +37,11 @@ class _SendScreenState extends State<SendScreen> {
 
   Future<void> _scanNfc(AppLocalizations l10n) async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
-    final available = await NfcManager.instance.isAvailable();
-    if (!mounted) return;
-    if (!available) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.nfcNotAvailable)));
+    final available = await NfcManager.instance.checkAvailability();
+    if (!mounted || _scanningNfc) return;
+    if (available != NfcAvailability.enabled) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.nfcNotAvailable)));
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
@@ -44,32 +50,38 @@ class _SendScreenState extends State<SendScreen> {
         duration: const Duration(seconds: 5),
       ),
     );
-    NfcManager.instance.startSession(
-      onDiscovered: (NfcTag tag) async {
-        final ndef = Ndef.from(tag);
-        if (ndef == null) {
-          await NfcManager.instance.stopSession();
-          return;
-        }
-        final message = await ndef.read();
-        await NfcManager.instance.stopSession();
-        for (final record in message.records) {
-          final payload = String.fromCharCodes(record.payload);
-          // NDEF text record has a 1-byte status + language code prefix
-          final text = record.typeNameFormat == NdefTypeNameFormat.nfcWellknown
-              ? payload.substring(1 + payload.codeUnitAt(0) & 0x3F)
-              : payload;
-          if (text.startsWith('hy1')) {
-            if (!mounted) return;
-            setState(() => _addressController.text = text.trim());
-            return;
+    setState(() => _scanningNfc = true);
+    try {
+      await NfcManager.instance.startSession(
+        pollingOptions: {NfcPollingOption.iso14443, NfcPollingOption.iso15693},
+        invalidateAfterFirstReadIos: false,
+        onDiscovered: (NfcTag tag) async {
+          try {
+            final text = decodeNfcAddress(await Ndef.from(tag)?.read());
+            if (mounted && text != null) _addressController.text = text;
+          } on Exception catch (error) {
+            if (mounted) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text(error.toString())));
+            }
+          } finally {
+            if (mounted) {
+              setState(() => _scanningNfc = false);
+              await NfcManager.instance.stopSession();
+            }
           }
-        }
-      },
-      onError: (error) async {
-        await NfcManager.instance.stopSession();
-      },
-    );
+        },
+        onSessionErrorIos: (error) {
+          if (mounted) setState(() => _scanningNfc = false);
+        },
+      );
+    } on Exception catch (error) {
+      if (mounted) {
+        setState(() => _scanningNfc = false);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
   }
 
   /// Shows a password confirmation dialog. Returns true if the password is
@@ -174,10 +186,13 @@ class _SendScreenState extends State<SendScreen> {
     final walletService = context.read<WalletService>();
     final amountText = _amountController.text.trim();
     final recipientText = _addressController.text.trim();
-    final amountHyp = double.parse(amountText);
-    final feeHyp = 0.0001;
+    final amountAtomic = parsePaymentAmount(amountText);
+    if (amountAtomic == null) return;
+    const feeText = '0.0001';
+    final feeAtomic = parsePaymentAmount(feeText)!;
+    final session = walletService.paymentSession;
+    if (session == null) return;
 
-    // ── Step 1: Show confirmation dialog ──
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -206,7 +221,7 @@ class _SendScreenState extends State<SendScreen> {
               ),
             ),
             Text(
-              '$amountHyp HPN',
+              '$amountText HPN',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
@@ -217,7 +232,7 @@ class _SendScreenState extends State<SendScreen> {
                 color: Theme.of(ctx).colorScheme.onSurfaceVariant,
               ),
             ),
-            Text('$feeHyp HPN', style: const TextStyle(fontSize: 14)),
+            Text('$feeText HPN', style: const TextStyle(fontSize: 14)),
           ],
         ),
         actions: [
@@ -235,17 +250,15 @@ class _SendScreenState extends State<SendScreen> {
 
     if (confirmed != true || !mounted) return;
 
-    // ── Step 2: Authenticate before sending ──
     if (walletService.isBiometricPlatform && walletService.biometricEnabled) {
       // Mobile with biometric enabled → use biometric auth
       final authed = await walletService.authenticateWithBiometrics(
-        reason: 'Authorize transaction of $amountHyp HPN',
+        reason: 'Authorize transaction of $amountText HPN',
       );
       if (!authed) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.biometricUnlock)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l10n.biometricUnlock)));
         return;
       }
     } else {
@@ -254,7 +267,9 @@ class _SendScreenState extends State<SendScreen> {
       if (passwordOk != true) return;
     }
 
-    // ── Step 3: Execute transfer ──
+    if (!mounted || session != walletService.paymentSession || _isSending) {
+      return;
+    }
     setState(() => _isSending = true);
 
     try {
@@ -263,23 +278,18 @@ class _SendScreenState extends State<SendScreen> {
         await walletService.scanWalletOutputs();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Scan failed: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Scan failed: $e')));
         return;
       }
 
-      // Parse amount (HPN to atomic units: 1 HPN = 1e12 atomic)
-      final amountAtomic = BigInt.from(amountHyp * 1e12);
-      final feeAtomic = BigInt.from(1e8); // 0.0001 HPN
-
       // Check balance
       final balance = await walletService.getSpendableBalance();
+      if (!mounted || session != walletService.paymentSession) return;
       if (balance < amountAtomic + feeAtomic) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Insufficient balance')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Insufficient balance')));
         return;
       }
 
@@ -290,7 +300,7 @@ class _SendScreenState extends State<SendScreen> {
         ringSize: walletService.networkRingSize,
       );
 
-      if (!mounted) return;
+      if (!mounted || session != walletService.paymentSession) return;
 
       if (result.accepted) {
         // Record the sent transfer in history
@@ -372,9 +382,8 @@ class _SendScreenState extends State<SendScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Send failed: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Send failed: $e')));
     } finally {
       if (mounted) {
         setState(() => _isSending = false);
@@ -418,7 +427,7 @@ class _SendScreenState extends State<SendScreen> {
                       ? IconButton(
                           icon: const Icon(Icons.nfc_rounded, size: 20),
                           tooltip: l10n.nfcTapToTransfer,
-                          onPressed: () => _scanNfc(l10n),
+                          onPressed: _scanningNfc ? null : () => _scanNfc(l10n),
                         )
                       : null,
                 ),
@@ -432,7 +441,7 @@ class _SendScreenState extends State<SendScreen> {
                 textInputAction: TextInputAction.done,
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return l10n.amountRequired;
-                  if (double.tryParse(v.trim()) == null) {
+                  if (parsePaymentAmount(v) == null) {
                     return l10n.invalidAmount;
                   }
                   return null;

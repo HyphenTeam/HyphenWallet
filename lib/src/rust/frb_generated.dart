@@ -4,11 +4,14 @@
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
 import 'api/wallet.dart';
+
 import 'dart:async';
 import 'dart:convert';
+
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// Main entrypoint of the Rust API
@@ -153,6 +156,7 @@ abstract class RustLibApi extends BaseApi {
     required BigInt startHeight,
     required BigInt endHeight,
     required bool isMainnet,
+    String? cacheDirectory,
   });
 
   Future<TransactionSendResult> crateApiWalletSendTransaction({
@@ -771,6 +775,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required BigInt startHeight,
     required BigInt endHeight,
     required bool isMainnet,
+    String? cacheDirectory,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -783,6 +788,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_64(startHeight, serializer);
           sse_encode_u_64(endHeight, serializer);
           sse_encode_bool(isMainnet, serializer);
+          sse_encode_opt_String(cacheDirectory, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -803,6 +809,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           startHeight,
           endHeight,
           isMainnet,
+          cacheDirectory,
         ],
         apiImpl: this,
       ),
@@ -820,6 +827,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "startHeight",
           "endHeight",
           "isMainnet",
+          "cacheDirectory",
         ],
       );
 
@@ -1128,6 +1136,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  String? dco_decode_opt_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
   SignResult dco_decode_sign_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -1274,6 +1288,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
   }
 
   @protected
@@ -1436,6 +1461,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint8List(self);
+  }
+
+  @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_String(self, serializer);
+    }
   }
 
   @protected

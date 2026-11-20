@@ -58,13 +58,9 @@ fn msg_base_w(msg_hash: &[u8; 32]) -> Vec<u8> {
     for &b in &base_w {
         checksum += (WOTS_CHAIN_MAX as u32) - (b as u32);
     }
-    checksum <<= 4;
-
-    // Append checksum digits
-    let cs_bytes = checksum.to_be_bytes();
-    base_w.push(cs_bytes[1] >> WOTS_LOG_W);
-    base_w.push(cs_bytes[1] & 0x0F);
-    base_w.push(cs_bytes[2] >> WOTS_LOG_W);
+    for shift in [8, 4, 0] {
+        base_w.push(((checksum >> shift) & 0x0f) as u8);
+    }
 
     base_w
 }
@@ -252,8 +248,7 @@ impl HybridSignature {
         let vk = ed25519_dalek::VerifyingKey::from_bytes(&self.ed25519_pubkey)
             .map_err(|e| format!("invalid ed25519 public key: {e}"))?;
         let sig = ed25519_dalek::Signature::from_bytes(&self.ed25519_sig);
-        use ed25519_dalek::Verifier;
-        vk.verify(msg, &sig)
+        vk.verify_strict(msg, &sig)
             .map_err(|e| format!("ed25519 verification failed: {e}"))?;
 
         // Verify WOTS+
@@ -278,6 +273,13 @@ impl HybridSignature {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checksum_encodes_all_three_base_16_digits() {
+        let mut digest = [0; 32];
+        digest[0] = 0x12;
+        assert_eq!(&msg_base_w(&digest)[WOTS_LEN1..], &[3, 11, 13]);
+    }
 
     #[test]
     fn wots_sign_verify() {

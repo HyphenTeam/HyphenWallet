@@ -1,0 +1,67 @@
+# Wallet operations · 钱包使用指南
+
+## Recovery, scanning and confirmation
+
+Back up the recovery words in order and the exact password used to create the Flutter wallet. Store them separately offline. The app derives keys from both. A different password opens a different address. Compare the restored receiving address with a known copy before using it. Local wallet files use Argon2id and XChaCha20-Poly1305 authenticated encryption.
+
+The restore screen adds a wallet and accepts 12 or 24 English words. It trims the ends of the phrase. The historical derivation reads its internal whitespace and the original password as UTF-8 bytes. Preserve repeated spaces and the original Unicode form. Enter the original password directly. The app applies its historical password transform automatically. The English BIP39 seed vector checks the underlying PBKDF2 step. An executable built from wallet commit `aac6300` and its own lockfile produced the same receiving address as the current wallet for the recovery test fixture.
+
+Select the correct network and connect to a trusted node's binary RPC endpoint. The Rust client pins the network magic, genesis hash, consensus parameter hash, block version and work protocol version. It checks block ancestry and transaction roots, reconstructs global output indices, and tracks spent key images from genesis. An output range starting later in the chain still accounts for earlier spends. Public key images can spill to temporary files in the application cache during a large scan.
+
+After sending, use the transaction hash to check canonical inclusion and rescan for change. RPC admission places a transaction in the mempool. A restored wallet may take time to rebuild its balance as it reads the chain. A remote node supplies the canonical history used for the scan.
+
+Upgrade the node before upgrading scanning clients. For a rewarded block, binary RPC must return the miner's `block_authorization` in field 6. The scanner verifies the signature and reconstructs the output from the recipient keys and `header.reward`. On `contract-devnet` it also checks that `header.extra_nonce` commits to the two authorized recipient keys. Historical v5 profiles lack that header commitment. For ordinary payments the wallet checks the reported block, position and transaction root. Confirmation depth comes from that node's reported tip.
+
+While unlocked, the wallet checks the tip hash every five seconds and rescans after a change. Receive shows the latest incoming payment with unspent outputs, its remaining amount and confirmations. A reorganization can remove the receipt and reduce the balance. In the local PPLNS test, the receipt disappeared after height 16 was replaced and returned when the same transaction confirmed at height 22. Sender change is excluded.
+
+Upgrading the app removes legacy output caches and the shared biometric credential. Rescan to rebuild spendable outputs. New caches contain amounts and output derivation data. The unlocked wallet derives the one-time spending key when signing. Biometric unlock uses a wallet-specific credential after password unlock with biometrics enabled. The payment form accepts at most 12 decimal places and retains the exact atomic amount through signing.
+
+The experimental WOTS message-signing entry point now returns an error. Its previous interface could select the same one-time key for multiple messages. The corrected verifier uses the complete three-digit checksum, so a historical experimental signature can fail verification. Ordinary payments use CLSAG. The historical password transform uses the WOTS public key and preserves its previous derivation.
+
+## Shared pool payout agent
+
+Build the signer and start it on the same host as the pool. Provide a dedicated 64-byte seed (raw bytes or 128 hex digits) and a 32–256 character bearer token. Use a fee accepted by the node's relay policy. The example uses devnet atomic units.
+
+```sh
+cargo build --release --locked --manifest-path rust/Cargo.toml --bin hyphen-payout-agent
+./rust/target/release/hyphen-payout-agent --network devnet --bind 127.0.0.1:38401 --node-host 127.0.0.1 --node-port 48333 --seed-file pool.seed --token-file payout.token --state-dir payout_agent_state --fee 1000000
+```
+
+The agent exposes authenticated `/v1/health`, `/v1/submit` and `/v1/status` routes on loopback. Pool accounting assigns an intent ID and reserves the amount. The agent persists the signed transaction before relaying it, reuses the transaction for a retry and serializes unconfirmed payouts. Preserve the seed, token and agent state across restarts. [Pool settlement](https://github.com/HyphenTeam/HyphenPool/blob/main/wiki/Operations.md)
+
+One agent holds the state-directory lock for its lifetime. It replaces the saved state atomically from a temporary file in the same directory. If the old main file is absent at upgrade, the agent can recover the previous `.bak`. A corrupt main file produces a startup error. Stop the agent before copying its state for backup.
+
+## Builds and compatibility
+
+| Local release build with the receive view | SHA-256 |
+| --- | --- |
+| Windows x64 `hyphen_wallet.exe` | `9c9a8838ff7f280448b8eecb1f99d3a093e4c905a235fb398f866fc43330c2cb` |
+| `rust_lib_hyphen_wallet.dll` | `45372bcdc0bd08301546233f4de945361c109814b92410ea9339a2a34a874918` |
+| `data/app.so` | `7a9b16eae01de43332e41233a4d5b8aecb41991fae0825c60f90e6cf3f646b0e` |
+| Android ARM64 `app-release.apk` | `8c87b844c1c8a9445da7c245b50264b8fa377c92269f118b420e4dfe3170c9da` |
+
+`apksigner verify --print-certs` identified the local APK signer as `CN=Android Debug`, certificate SHA-256 `44ee3a577dfaa59d7b6d692168f4bfd17e56ea70dcd51557dff57fc425a63cc8`.
+
+The four TTF files extracted from this APK and the four files in the Windows release assets each matched the source manifest byte for byte. The Google Sans license file also matched in both builds. The record is `target/font-payload-review-xph9hiy9/result.json` in the node workspace.
+
+The Rust lockfile pins the base-chain revision and `pubspec.lock` pins Flutter packages. Run `flutter analyze`, `flutter test` and `cargo test --locked --manifest-path rust/Cargo.toml` after protocol or bridge changes. The node's identity vectors and an actual devnet transfer cover compatibility across repositories. The Windows and Android builds use a native Rust library. The release signing identity is a separate deployment choice. Fonts are registered in `pubspec.yaml`; their checksums are listed in `assets/fonts/manifest.json`.
+
+Google Sans includes the authors' license. The wallet bundles three static HarmonyOS Sans SC 2.400 files. Huawei's older SC package contains static version 1.0. Its current download contains one SC font with SHA-256 `8978e05044e7089ad6a9de38c505c8148305607983487435a916d2610700a7ca`. Neither package matches the three hashes in the wallet manifest. The accompanying grant covers unmodified fonts supplied under the agreement and requires an in-app notice and retention of the copyright notice and agreement. Distribution of the wallet's exact files still needs matching provenance and terms. [Wallet font manifest](../assets/fonts/manifest.json) · [Google Sans license](../assets/fonts/GoogleSans-OFL.txt) · [Huawei design resources](https://developer.huawei.com/consumer/cn/design/resource)
+
+## 中文说明
+
+钱包中的三款 HarmonyOS Sans SC 静态字重标记为 2.400 版。华为旧版下载包含 1.0 版静态字体，当前下载包含单个 SC 字体，两者均与钱包清单的三个哈希不同。发布仍需核对这三份原文件的来源、适用授权及软件内的声明要求。[字体清单](../assets/fonts/manifest.json) · [华为设计资源](https://developer.huawei.com/consumer/cn/design/resource)
+
+本地备选 Regular、Medium、Bold 文件逐字节匹配旧版 `HarmonyOS-Sans.zip` 中的同名字重。该包的 SHA-256 为 `fb02c86e358cd9aad8d4dfa957ee502381e7ee2e94499a9133add4324b6ce69a`，也与已核对的华为旧版包一致。钱包静态 2.400 的来源仍待确认。
+
+请分别离线备份按顺序排列的助记词和创建 Flutter 钱包时使用的原密码。两者共同派生密钥。输入其他密码会得到不同的地址，恢复后请与以前保存的收款地址核对。本地钱包文件使用 Argon2id 和 XChaCha20-Poly1305 认证加密。
+
+恢复入口会新增一个钱包，接受 12 或 24 个英文词。界面会去掉助记词首尾空白，内部空白以及原密码的 Unicode 字节形式都影响地址。直接输入原密码，应用会自动执行历史密码变换。使用旧版 `aac6300` 源码及其锁文件独立构建的程序，已与本版本核对同一组公开测试词和密码的收款地址。
+
+选择正确的网络，连接可信节点的二进制 RPC。钱包核对网络标识、创世哈希、共识参数哈希和协议版本，从创世块开始验证祖先与交易根，重建全局输出索引并核对已花费输入。指定较晚的输出起始高度时，仍会检查之前发生的花费。大型扫描可把公开的 key image 临时写入应用缓存目录。发送后按交易哈希查链上确认，再重扫找零。
+
+先升级节点，再升级钱包。扫描奖励时，钱包验证矿工授权并重算收款输出。合约开发网还核对块头 `extra_nonce` 中的两把奖励收款公钥承诺。历史网络沿用各自的 v5 规则。普通付款会核对块内位置与交易根，确认深度依赖所连节点的链顶。解锁后每五秒检查链顶哈希，变化时重扫。收款页显示最近一笔仍有未花输出的普通收款及其剩余金额和确认数，排除找零。分叉时收款可能撤销，同一交易重新确认后恢复。升级会清理旧输出缓存和全局生物识别凭据，启用生物识别后用原密码解锁可建立该钱包专属凭据。
+
+发送金额最多保留 12 位小数，确认和签名使用同一笔整数金额。实验性 WOTS 消息签名入口已停用，校验和修正后，部分旧消息签名可能无法通过验证。日常付款采用 CLSAG，历史密码变换只使用 WOTS 公钥。
+
+共享矿池使用上面的命令在回环地址运行独立付款代理，为矿池单独准备种子、令牌与持久化状态目录。矿池按意图编号预留余额，代理先持久化签名交易再提交；同一意图重试会复用同一笔交易。重启时保留三者。依赖或桥接层升级后，应运行上列检查，并在开发网上核对一次完整付款。

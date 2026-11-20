@@ -8,10 +8,14 @@
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use rand::RngExt;
-use std::collections::HashSet;
+use std::collections::{HashMap, hash_map::Entry};
+use std::fs::File;
+use std::io::{self, Read, Seek, Write};
+use std::ops::RangeInclusive;
+use std::path::Path;
 
 use hyphen_crypto::pedersen::PedersenGens;
-use hyphen_crypto::stealth::{self, EphemeralKey, SpendKey, StealthAddress, ViewKey};
+use hyphen_crypto::stealth::{self, EphemeralKey, StealthAddress, ViewKey};
 use hyphen_tx::builder::{InputSpec, TransactionBuilder};
 use hyphen_tx::note::{Note, OwnedNote};
 use hyphen_tx::transaction::Transaction;
@@ -20,18 +24,88 @@ use crate::address::HyphenAddress;
 use crate::keys::MasterKey;
 use crate::rpc_client::{ChainInfoResponse, RpcClient};
 
-// ─── Public types exposed to FFI ────────────────────────────
-
 /// A wallet-owned unspent output serialisable across FFI.
 #[derive(Clone, serde::Serialize, serde::Deserialize, rustbinary::CompactBinary)]
 pub struct WalletOutput {
     pub global_index: u64,
+    #[serde(with = "json_amount")]
     pub value: u64,
-    pub blinding_hex: String,
-    pub spend_sk_hex: String,
+    pub ephemeral_pubkey_hex: String,
+    pub output_index: u64,
     pub one_time_pubkey_hex: String,
     pub commitment_hex: String,
     pub block_height: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub received_tx_hash: Option<String>,
+}
+
+mod json_amount {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &u64, serializer: S) -> Result<S::Ok, S::Error> {
+        if *value < (1 << 53) {
+            serializer.serialize_u64(*value)
+        } else {
+            serializer.collect_str(value)
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Amount {
+            Number(u64),
+            Decimal(String),
+        }
+        match Amount::deserialize(deserializer)? {
+            Amount::Number(value) => Ok(value),
+            Amount::Decimal(text) => text.parse().map_err(serde::de::Error::custom),
+        }
+    }
+}
+
+impl WalletOutput {
+    fn recover(&self, keys: &crate::keys::DerivedKeyPair) -> Result<OwnedNote, String> {
+        let mut ephemeral = [0; 32];
+        hex::decode_to_slice(&self.ephemeral_pubkey_hex, &mut ephemeral)
+            .map_err(|_| "invalid cached ephemeral key")?;
+        let point = decompress(&ephemeral).ok_or("invalid cached ephemeral key")?;
+        let shared = output_shared_secret(keys.view_secret, point, self.output_index);
+        let spend_sk = shared + keys.spend_secret;
+        let pubkey = RistrettoPoint::mul_base(&spend_sk).compress().to_bytes();
+        let blinding = stealth::derive_commitment_blinding(&shared);
+        let commitment = hyphen_crypto::pedersen::Commitment::create(self.value, blinding);
+        if hex::encode(pubkey) != self.one_time_pubkey_hex
+            || hex::encode(commitment.as_bytes()) != self.commitment_hex
+        {
+            return Err("wallet cache does not match the unlocked keys and amount".into());
+        }
+        Ok(OwnedNote {
+            note: Note {
+                commitment,
+                one_time_pubkey: pubkey,
+                ephemeral_pubkey: ephemeral,
+                encrypted_amount: stealth::encrypt_amount(self.value, &shared),
+                global_index: self.global_index,
+                block_height: self.block_height,
+            },
+            value: self.value,
+            blinding: blinding.to_bytes(),
+            spend_sk: spend_sk.to_bytes(),
+        })
+    }
+}
+
+fn output_shared_secret(
+    view_secret: Scalar,
+    ephemeral: RistrettoPoint,
+    output_index: u64,
+) -> Scalar {
+    let point = (view_secret * ephemeral).compress();
+    let mut material = [0u8; 40];
+    material[..32].copy_from_slice(point.as_bytes());
+    material[32..].copy_from_slice(&output_index.to_le_bytes());
+    hyphen_crypto::hash::hash_to_scalar(b"Hyphen_ECDH", &material)
 }
 
 /// Result of a transaction submission.
@@ -84,8 +158,6 @@ pub struct ChainStatus {
     pub tip_hash_hex: String,
 }
 
-// ─── Chain info ─────────────────────────────────────────────
-
 pub fn get_chain_status(host: String, port: u16) -> Result<ChainStatus, String> {
     let mut client = RpcClient::connect(&host, port)?;
     let info = verified_chain_info(&mut client)?;
@@ -128,20 +200,78 @@ fn require_network_class(info: &ChainInfoResponse, wallet_is_mainnet: bool) -> R
         return Err(format!(
             "wallet network setting does not match the node: the node serves {} ({}), the wallet is configured for {}",
             info.network,
-            if node_is_mainnet { "mainnet" } else { "testnet/devnet" },
-            if wallet_is_mainnet { "mainnet" } else { "testnet/devnet" },
+            if node_is_mainnet {
+                "mainnet"
+            } else {
+                "testnet/devnet"
+            },
+            if wallet_is_mainnet {
+                "mainnet"
+            } else {
+                "testnet/devnet"
+            },
         ));
     }
     Ok(())
 }
 
-// ─── Output scanning ───────────────────────────────────────
+// Keep one batch of public input key images in memory. A large scan spills
+// full batches to an anonymous file, then intersects them with wallet keys.
+// This also catches a repeated output key whose spend preceded the output.
+#[derive(Default)]
+struct ScanSpends<'a> {
+    directory: Option<&'a Path>,
+    batch: Vec<[u8; 32]>,
+    file: Option<File>,
+    batches_written: u64,
+}
+
+impl ScanSpends<'_> {
+    const BATCH_SIZE: usize = 8192;
+
+    fn push(&mut self, image: [u8; 32]) -> io::Result<()> {
+        if self.batch.len() == Self::BATCH_SIZE {
+            let file = match &mut self.file {
+                Some(file) => file,
+                slot @ None => slot.insert(match self.directory {
+                    Some(directory) => tempfile::tempfile_in(directory)?,
+                    None => tempfile::tempfile()?,
+                }),
+            };
+            file.write_all(self.batch.as_flattened())?;
+            self.batches_written += 1;
+            self.batch.clear();
+        }
+        self.batch.push(image);
+        Ok(())
+    }
+
+    fn remove_spent<T>(mut self, unspent: &mut HashMap<[u8; 32], T>) -> io::Result<()> {
+        for image in &self.batch {
+            unspent.remove(image);
+        }
+        if let Some(mut file) = self.file {
+            file.rewind()?;
+            self.batch.resize(Self::BATCH_SIZE, [0; 32]);
+            for _ in 0..self.batches_written {
+                if unspent.is_empty() {
+                    break;
+                }
+                file.read_exact(self.batch.as_flattened_mut())?;
+                for image in &self.batch {
+                    unspent.remove(image);
+                }
+            }
+        }
+        Ok(())
+    }
+}
 
 /// Scan the blockchain for outputs belonging to this wallet.
 ///
-/// Downloads blocks from `start_height` to `end_height` (inclusive),
-/// parses all transaction outputs, and checks each one against the
-/// wallet's view key. Returns all owned, unspent outputs.
+/// Reads from genesis through `end_height` (capped at the tip) to verify
+/// ancestry, count global output indices and collect spends. Returns owned
+/// outputs created from `start_height` onward that are unspent at the end height.
 pub fn scan_wallet_outputs(
     host: String,
     port: u16,
@@ -151,53 +281,103 @@ pub fn scan_wallet_outputs(
     end_height: u64,
     is_mainnet: bool,
 ) -> Result<ScanResult, String> {
-    let seed_bytes = hex::decode(&seed_hex).map_err(|e| format!("invalid seed hex: {e}"))?;
-    if seed_bytes.len() != 64 {
-        return Err(format!("seed must be 64 bytes, got {}", seed_bytes.len()));
-    }
-    let mut seed = [0u8; 64];
-    seed.copy_from_slice(&seed_bytes);
+    scan_outputs_in(
+        host,
+        port,
+        seed_hex,
+        account,
+        start_height..=end_height,
+        is_mainnet,
+        None,
+    )
+}
 
-    let mk = MasterKey::from_seed(&seed);
+pub(crate) fn scan_outputs_in(
+    host: String,
+    port: u16,
+    seed_hex: String,
+    account: u32,
+    heights: RangeInclusive<u64>,
+    is_mainnet: bool,
+    directory: Option<&Path>,
+) -> Result<ScanResult, String> {
+    let (start_height, end_height) = heights.into_inner();
+    let mk = MasterKey::from_hex(seed_hex)?;
     let keys = mk.derive_bip44(account, 0, 0);
 
     let view_key = ViewKey(keys.view_secret.to_bytes());
-    let spend_pub_bytes = keys.spend_public.compress().to_bytes();
-    let _spend_key = SpendKey(keys.spend_secret.to_bytes());
 
     let mut client = RpcClient::connect(&host, port)?;
-    require_network_class(&verified_chain_info(&mut client)?, is_mainnet)?;
-    let mut owned_outputs = Vec::new();
-    let mut spent_key_images = HashSet::new();
-    let mut global_index: u64 = 0;
-    let mut scanned_height = start_height.saturating_sub(1);
-
-    // Determine starting global_index by scanning from genesis if start_height > 0
-    if start_height > 0 {
-        for h in 0..start_height {
-            let block = client.get_block_by_height(h)?;
-            for tx_blob in &block.transactions {
-                if let Ok(tx) = Transaction::deserialise_limited(tx_blob) {
-                    global_index += tx.outputs.len() as u64;
-                }
-            }
-        }
+    let info = verified_chain_info(&mut client)?;
+    require_network_class(&info, is_mainnet)?;
+    let end_height = end_height.min(info.height);
+    if start_height > end_height {
+        return Err(format!(
+            "scan starts at {start_height} beyond the last requested block {end_height}"
+        ));
     }
+    // An extension of the chain is fine. A reorg through the requested range
+    // invalidates the output indices and key images collected during this scan.
+    let anchor = if end_height == info.height {
+        info.tip_hash.clone()
+    } else {
+        client.get_block_by_height(end_height)?.hash
+    };
+    let mut owned_outputs = HashMap::<[u8; 32], WalletOutput>::new();
+    let mut spends = ScanSpends {
+        directory,
+        ..Default::default()
+    };
+    let mut global_index: u64 = 0;
 
-    for h in start_height..=end_height {
-        let block = match client.get_block_by_height(h) {
-            Ok(b) => b,
-            Err(_) => break, // Past chain tip
-        };
-        scanned_height = h;
+    let mut parent = hyphen_crypto::Hash256::ZERO;
+    for h in 0..=end_height {
+        let block = client.get_block_by_height(h)?;
+        let header = checked_header(&block, h)?;
+        let hash = header.hash();
+        if header.prev_hash != parent || (h == 0 && block.hash != info.genesis_hash) {
+            return Err(format!("inconsistent block header at height {h}"));
+        }
+        parent = hash;
+        if h == end_height && block.hash != anchor {
+            return Err(format!("chain changed during wallet scan at height {h}"));
+        }
 
-        for tx_blob in &block.transactions {
-            let tx: Transaction = match Transaction::deserialise_limited(tx_blob) {
-                Ok(tx) => tx,
-                Err(_) => continue,
-            };
+        let transaction_hashes = checked_transaction_hashes(&header, &block.transactions)?;
+        let regular_count = transaction_hashes.len();
+        for (index, tx_blob) in block.transactions.iter().enumerate() {
+            // These consensus envelopes never append shielded outputs or spend key images.
+            if index < regular_count
+                && [b"HYPHWES1", b"HYPWASM1", b"AETHWRK1"]
+                    .iter()
+                    .any(|magic| tx_blob.starts_with(*magic))
+            {
+                continue;
+            }
+            let tx = Transaction::deserialise_limited(tx_blob)
+                .map_err(|error| format!("decode transaction {index} at height {h}: {error}"))?;
+            if index == regular_count {
+                verify_reward_output(&header, &info, &block.block_authorization, &tx)
+                    .map_err(|e| format!("invalid coinbase at height {h}: {e}"))?;
+            }
+            // A repeated output key can already have been spent before the
+            // requested output range. Key images apply to the entire prefix.
+            let incoming = start_height == 0
+                && index < regular_count
+                && !tx
+                    .inputs
+                    .iter()
+                    .any(|input| owned_outputs.contains_key(&input.key_image));
+            for input in &tx.inputs {
+                spends
+                    .push(input.key_image)
+                    .map_err(|e| format!("buffer scan key images: {e}"))?;
+            }
 
-            spent_key_images.extend(tx.inputs.iter().map(|input| input.key_image));
+            if h < start_height {
+                global_index += tx.outputs.len() as u64;
+                continue;
+            }
 
             for (out_idx, out) in tx.outputs.iter().enumerate() {
                 let eph = EphemeralKey(out.ephemeral_pubkey);
@@ -218,12 +398,7 @@ pub fn scan_wallet_outputs(
                         continue;
                     }
                 };
-                let a_r = view_scalar * big_r;
-                let encoded_idx = (out_idx as u64).to_le_bytes();
-                let ss = hyphen_crypto::hash::hash_to_scalar(
-                    b"Hyphen_ECDH",
-                    &[a_r.compress().as_bytes().as_slice(), &encoded_idx].concat(),
-                );
+                let ss = output_shared_secret(view_scalar, big_r, out_idx as u64);
                 let vt = stealth::compute_view_tag(&ss);
                 if vt != out.view_tag {
                     global_index += 1;
@@ -231,15 +406,8 @@ pub fn scan_wallet_outputs(
                 }
 
                 // Full ownership check
-                let spend_pub = match decompress(&spend_pub_bytes) {
-                    Some(p) => p,
-                    None => {
-                        global_index += 1;
-                        continue;
-                    }
-                };
                 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT as G;
-                let expected = ss * G + spend_pub;
+                let expected = ss * G + keys.spend_public;
                 if expected != otp {
                     global_index += 1;
                     continue;
@@ -269,30 +437,28 @@ pub fn scan_wallet_outputs(
                 let key_image = hyphen_tx::nullifier::compute_nullifier(&one_time_sk, &otp)
                     .compress()
                     .to_bytes();
-                owned_outputs.push((
-                    WalletOutput {
-                        global_index,
-                        value: amount,
-                        blinding_hex: hex::encode(blinding.to_bytes()),
-                        spend_sk_hex: hex::encode(one_time_sk.to_bytes()),
-                        one_time_pubkey_hex: hex::encode(out.one_time_pubkey),
-                        commitment_hex: hex::encode(out.commitment.as_bytes()),
-                        block_height: h,
-                    },
-                    key_image,
-                ));
+                let output = WalletOutput {
+                    global_index,
+                    value: amount,
+                    ephemeral_pubkey_hex: hex::encode(eph.0),
+                    output_index: out_idx as u64,
+                    one_time_pubkey_hex: hex::encode(out.one_time_pubkey),
+                    commitment_hex: hex::encode(out.commitment.as_bytes()),
+                    block_height: h,
+                    received_tx_hash: incoming.then(|| transaction_hashes[index].to_string()),
+                };
+                keep_spendable_output(owned_outputs.entry(key_image), output);
 
                 global_index += 1;
             }
         }
     }
 
-    let owned_outputs: Vec<WalletOutput> = owned_outputs
-        .into_iter()
-        .filter_map(|(output, key_image)| {
-            (!spent_key_images.contains(&key_image)).then_some(output)
-        })
-        .collect();
+    spends
+        .remove_spent(&mut owned_outputs)
+        .map_err(|e| format!("read scan key images: {e}"))?;
+    let mut owned_outputs: Vec<_> = owned_outputs.into_values().collect();
+    owned_outputs.sort_unstable_by_key(|output| output.global_index);
     let total_balance = owned_outputs.iter().try_fold(0u64, |balance, output| {
         balance
             .checked_add(output.value)
@@ -305,12 +471,142 @@ pub fn scan_wallet_outputs(
     Ok(ScanResult {
         total_balance,
         output_count,
-        scanned_height,
+        scanned_height: end_height,
         outputs_json,
     })
 }
 
-// ─── Transaction building + submission ──────────────────────
+fn keep_spendable_output(entry: Entry<'_, [u8; 32], WalletOutput>, output: WalletOutput) {
+    match entry {
+        Entry::Vacant(slot) => {
+            slot.insert(output);
+        }
+        Entry::Occupied(mut slot) if output.value > slot.get().value => {
+            slot.insert(output);
+        }
+        Entry::Occupied(_) => {}
+    }
+}
+
+fn checked_header(
+    block: &crate::rpc_client::BlockResponse,
+    height: u64,
+) -> Result<hyphen_core::BlockHeader, String> {
+    let header: hyphen_core::BlockHeader = crate::wire_config(4096)
+        .deserialize(&block.header_data)
+        .map_err(|e| format!("decode header at height {height}: {e}"))?;
+    if header.height != height || header.hash().as_bytes().as_slice() != block.hash {
+        return Err(format!("inconsistent block header at height {height}"));
+    }
+    Ok(header)
+}
+
+fn checked_transaction_hashes(
+    header: &hyphen_core::BlockHeader,
+    transactions: &[Vec<u8>],
+) -> Result<Vec<hyphen_crypto::Hash256>, String> {
+    let reward_count = usize::from(header.height > 0 && header.reward > 0);
+    let count = transactions
+        .len()
+        .checked_sub(reward_count)
+        .ok_or_else(|| format!("missing coinbase at height {}", header.height))?;
+    let hashes: Vec<_> = transactions[..count]
+        .iter()
+        .map(|tx| hyphen_crypto::blake3_hash(tx))
+        .collect();
+    if hyphen_core::block::merkle_root(&hashes) != header.tx_root {
+        return Err(format!(
+            "transaction root mismatch at height {}",
+            header.height
+        ));
+    }
+    Ok(hashes)
+}
+
+fn verify_reward_output(
+    header: &hyphen_core::BlockHeader,
+    info: &ChainInfoResponse,
+    authorization: &[u8],
+    tx: &Transaction,
+) -> Result<(), String> {
+    if authorization.is_empty() {
+        return Err("RPC node did not provide the miner authorization; upgrade the node".into());
+    }
+    let auth: hyphen_core::BlockAuthorization = crate::wire_config(256)
+        .deserialize(authorization)
+        .map_err(|e| format!("invalid authorization: {e}"))?;
+    let [output] = tx.outputs.as_slice() else {
+        return Err("expected one reward output".into());
+    };
+    if !tx.is_coinbase()
+        || tx.fee != 0
+        || tx.extra != header.height.to_le_bytes()
+        || !tx.prunable.clsag_signatures.is_empty()
+        || header.version != hyphen_core::FROZEN_BLOCK_VERSION
+        || auth.version != hyphen_core::authorization::BLOCK_AUTHORIZATION_VERSION
+        || auth.reward_view_public == [0; 32]
+        || auth.reward_spend_public == [0; 32]
+    {
+        return Err("invalid reward metadata".into());
+    }
+    if info.network_magic == b"HYCD"
+        && header.extra_nonce
+            != *hyphen_crypto::blake3_hash_many(&[
+                b"Hyphen/reward-recipient/v1",
+                &auth.reward_view_public,
+                &auth.reward_spend_public,
+            ])
+            .as_bytes()
+    {
+        return Err("reward keys differ from the block header commitment".into());
+    }
+    let digest = hyphen_core::authorization_digest(
+        header,
+        info.network_magic
+            .as_slice()
+            .try_into()
+            .map_err(|_| "invalid network magic")?,
+        info.consensus_params_hash
+            .as_slice()
+            .try_into()
+            .map_err(|_| "invalid consensus hash")?,
+        hyphen_crypto::Hash256::from_bytes(
+            info.genesis_hash
+                .as_slice()
+                .try_into()
+                .map_err(|_| "invalid genesis hash")?,
+        ),
+        auth.reward_view_public,
+        auth.reward_spend_public,
+    );
+    let miner = ed25519_dalek::VerifyingKey::from_bytes(&header.miner_pubkey)
+        .map_err(|_| "invalid miner key")?;
+    let signature = ed25519_dalek::Signature::from_slice(&auth.miner_signature)
+        .map_err(|_| "invalid signature length")?;
+    miner
+        .verify_strict(digest.as_bytes(), &signature)
+        .map_err(|_| "invalid miner signature")?;
+    let recipient = StealthAddress {
+        view_public: auth.reward_view_public,
+        spend_public: auth.reward_spend_public,
+    };
+    let (ephemeral, pk, shared) =
+        stealth::derive_consensus_one_time_key(&recipient, 0, header.hash().as_bytes())
+            .map_err(|e| e.to_string())?;
+    if output.ephemeral_pubkey != ephemeral.0
+        || output.one_time_pubkey != pk.compress().to_bytes()
+        || output.view_tag != stealth::compute_view_tag(&shared)
+        || output.encrypted_amount != stealth::encrypt_amount(header.reward, &shared)
+        || output.commitment
+            != hyphen_crypto::pedersen::Commitment::create(
+                header.reward,
+                stealth::derive_commitment_blinding(&shared),
+            )
+    {
+        return Err("reward output differs from the miner authorization and header amount".into());
+    }
+    Ok(())
+}
 
 pub struct TransactionRequest {
     pub host: String,
@@ -386,13 +682,7 @@ pub fn build_transaction(request: TransactionRequest) -> Result<BuiltTransaction
     };
 
     // Parse sender keys (for change output)
-    let seed_bytes = hex::decode(&seed_hex).map_err(|e| format!("invalid seed hex: {e}"))?;
-    if seed_bytes.len() != 64 {
-        return Err(format!("seed must be 64 bytes, got {}", seed_bytes.len()));
-    }
-    let mut seed = [0u8; 64];
-    seed.copy_from_slice(&seed_bytes);
-    let mk = MasterKey::from_seed(&seed);
+    let mk = MasterKey::from_hex(seed_hex)?;
     let keys = mk.derive_bip44(account, 0, 0);
     let sender_stealth = StealthAddress {
         view_public: keys.view_public.compress().to_bytes(),
@@ -435,94 +725,24 @@ pub fn build_transaction(request: TransactionRequest) -> Result<BuiltTransaction
         ));
     }
 
-    // Real ring size (number of decoys = ring_size - 1)
-    let ring_sz = (ring_size as usize).max(2);
-    let num_decoys = ring_sz - 1;
+    let expected_ring = if node_is_mainnet { 16 } else { 4 };
+    if ring_size != expected_ring {
+        return Err(format!("network requires ring size {expected_ring}"));
+    }
+    let num_decoys = ring_size as usize - 1;
 
     // Build transaction
     let mut builder = TransactionBuilder::new();
     builder.set_fee(fee);
     builder.set_epoch_seed(&epoch_seed);
 
-    // Pre-flight: verify selected outputs exist on-chain with matching data
-    let verify_indices: Vec<u64> = selected.iter().map(|o| o.global_index).collect();
-    let chain_outputs = client.get_output_info(verify_indices)?;
-    for (wo, co) in selected.iter().zip(chain_outputs.outputs.iter()) {
-        if co.one_time_pubkey.is_empty() || co.commitment.is_empty() {
-            return Err(format!(
-                "output at global_index {} not found on chain — wallet cache may be stale, please re-scan",
-                wo.global_index
-            ));
-        }
-        let otp_bytes = hex::decode(&wo.one_time_pubkey_hex)
-            .map_err(|e| format!("decode otp for verify: {e}"))?;
-        let cm_bytes =
-            hex::decode(&wo.commitment_hex).map_err(|e| format!("decode cm for verify: {e}"))?;
-        if co.one_time_pubkey != otp_bytes || co.commitment != cm_bytes {
-            return Err(format!(
-                "output at global_index {} has mismatched data on chain — wallet cache is stale, please re-scan",
-                wo.global_index
-            ));
-        }
-    }
-
     // Add inputs with decoys
     for wo in &selected {
-        let decoys = fetch_decoys(
-            &mut client,
-            num_decoys,
-            total_outputs,
-            wo.global_index,
-            wo.block_height,
-            &vre,
-        )?;
+        let decoys = fetch_decoys(&mut client, num_decoys, total_outputs, wo, &vre)?;
         let real_index = rand::rng().random_range(0..=decoys.len());
 
-        let blinding_bytes =
-            hex::decode(&wo.blinding_hex).map_err(|e| format!("decode blinding: {e}"))?;
-        let spend_sk_bytes =
-            hex::decode(&wo.spend_sk_hex).map_err(|e| format!("decode spend_sk: {e}"))?;
-        let otp_bytes =
-            hex::decode(&wo.one_time_pubkey_hex).map_err(|e| format!("decode otp: {e}"))?;
-        let cm_bytes =
-            hex::decode(&wo.commitment_hex).map_err(|e| format!("decode commitment: {e}"))?;
-
-        if blinding_bytes.len() != 32
-            || spend_sk_bytes.len() != 32
-            || otp_bytes.len() != 32
-            || cm_bytes.len() != 32
-        {
-            return Err(format!(
-                "wallet output {} contains a non-32-byte cryptographic field",
-                wo.global_index
-            ));
-        }
-
-        let mut blinding = [0u8; 32];
-        blinding.copy_from_slice(&blinding_bytes);
-        let mut spend_sk = [0u8; 32];
-        spend_sk.copy_from_slice(&spend_sk_bytes);
-        let mut otp = [0u8; 32];
-        otp.copy_from_slice(&otp_bytes);
-        let mut cm = [0u8; 32];
-        cm.copy_from_slice(&cm_bytes);
-
-        let owned_note = OwnedNote {
-            note: Note {
-                commitment: hyphen_crypto::pedersen::Commitment(cm),
-                one_time_pubkey: otp,
-                ephemeral_pubkey: [0u8; 32],
-                encrypted_amount: [0u8; 32],
-                global_index: wo.global_index,
-                block_height: wo.block_height,
-            },
-            value: wo.value,
-            blinding,
-            spend_sk,
-        };
-
         builder.add_input(InputSpec {
-            owned: owned_note,
+            owned: wo.recover(&keys)?,
             decoys,
             real_index,
         });
@@ -616,14 +836,28 @@ pub fn transaction_status(
         if location.block_hash.len() != 32 {
             return Err("node returned an invalid confirmed block hash".into());
         }
-        let tip = client.get_chain_info()?.height;
-        if location.block_height > tip {
-            return Err("node returned a transaction height above its chain tip".into());
+        let block = client.get_block_by_height(location.block_height)?;
+        let header = checked_header(&block, location.block_height)?;
+        let hashes = checked_transaction_hashes(&header, &block.transactions)?;
+        if block.hash != location.block_hash
+            || hashes
+                .get(location.tx_index as usize)
+                .is_none_or(|hash| hash.as_bytes().as_slice() != tx_hash)
+        {
+            return Err("transaction location differs from the block at that height".into());
+        }
+        let tip = verified_chain_info(&mut client)?;
+        if location.block_height > tip.height
+            || (location.block_height == tip.height && block.hash != tip.tip_hash)
+        {
+            return Err("transaction location differs from the reported tip".into());
         }
         return Ok(TransactionStatus::Confirmed {
             block_hash_hex: hex::encode(location.block_hash),
             block_height: location.block_height,
-            confirmations: tip - location.block_height + 1,
+            confirmations: (tip.height - location.block_height)
+                .checked_add(1)
+                .ok_or("confirmation count overflow")?,
         });
     }
 
@@ -639,9 +873,7 @@ pub fn transaction_status(
     }
 }
 
-// ─── Internal helpers ───────────────────────────────────────
-
-fn decompress(bytes: &[u8; 32]) -> Option<RistrettoPoint> {
+fn decompress(bytes: &[u8]) -> Option<RistrettoPoint> {
     CompressedRistretto::from_slice(bytes).ok()?.decompress()
 }
 
@@ -687,57 +919,58 @@ fn fetch_decoys(
     client: &mut RpcClient,
     count: usize,
     total_outputs: u64,
-    exclude_index: u64,
-    real_height: u64,
+    owned: &WalletOutput,
     params: &VreParams,
 ) -> Result<Vec<(RistrettoPoint, RistrettoPoint, u64)>, String> {
     use rand::seq::SliceRandom;
     use std::collections::{HashMap, HashSet};
 
-    // More retries + larger batches for early/sparse chains
+    let exclude_index = owned.global_index;
+    let real_height = owned.block_height;
+    if exclude_index >= total_outputs || total_outputs <= count as u64 {
+        return Err("output set is too small or wallet cache is stale".into());
+    }
+    // Query the owned output and locally sampled candidates together only once.
+    let sample_size = total_outputs.min(256) as usize;
+    let mut indices = HashSet::from([exclude_index]);
+    if sample_size as u64 == total_outputs {
+        indices.extend(0..total_outputs);
+    } else {
+        while indices.len() < sample_size {
+            indices.insert(rand::rng().random_range(0..total_outputs));
+        }
+    }
+    let mut indices: Vec<_> = indices.into_iter().collect();
+    indices.sort_unstable();
+    let resp = client.get_output_info(indices.clone())?;
+    if resp.outputs.len() != indices.len() {
+        return Err("incomplete output lookup".into());
+    }
+    let mut candidates = Vec::with_capacity(sample_size - 1);
+    for (expected, out) in indices.into_iter().zip(resp.outputs) {
+        if out.global_index != expected
+            || out.one_time_pubkey.len() != 32
+            || out.commitment.len() != 32
+        {
+            return Err("inconsistent output lookup".into());
+        }
+        let pk = decompress(&out.one_time_pubkey).ok_or("invalid output public key")?;
+        let cm = decompress(&out.commitment).ok_or("invalid output commitment")?;
+        if expected == exclude_index {
+            if real_height != out.block_height
+                || hex::encode(&out.one_time_pubkey) != owned.one_time_pubkey_hex
+                || hex::encode(&out.commitment) != owned.commitment_hex
+            {
+                return Err("wallet output changed on chain, please re-scan".into());
+            }
+        } else {
+            candidates.push((pk, cm, expected, out.block_height));
+        }
+    }
+
     let max_retries = 16u32;
-
-    for attempt in 0..max_retries {
-        // Scale fetch aggressively — for early chains request up to all outputs
-        let base = (count as u32 + 4) * (3 + attempt);
-        let fetch_count = base.min(256).max(total_outputs.min(256) as u32);
-        let resp = client.get_random_outputs(fetch_count, total_outputs)?;
-
-        // Parse all valid candidates with their heights
-        let mut candidates: Vec<(RistrettoPoint, RistrettoPoint, u64, u64)> = Vec::new();
-        let mut seen_indices = HashSet::new();
-
-        for out in &resp.outputs {
-            if out.global_index == exclude_index {
-                continue;
-            }
-            if seen_indices.contains(&out.global_index) {
-                continue;
-            }
-            if out.one_time_pubkey.len() != 32 || out.commitment.len() != 32 {
-                continue;
-            }
-            let mut pk_bytes = [0u8; 32];
-            pk_bytes.copy_from_slice(&out.one_time_pubkey);
-            let mut cm_bytes = [0u8; 32];
-            cm_bytes.copy_from_slice(&out.commitment);
-
-            let pk = match decompress(&pk_bytes) {
-                Some(p) => p,
-                None => continue,
-            };
-            let cm = match decompress(&cm_bytes) {
-                Some(p) => p,
-                None => continue,
-            };
-
-            seen_indices.insert(out.global_index);
-            candidates.push((pk, cm, out.global_index, out.block_height));
-        }
-
-        if candidates.len() < count {
-            continue;
-        }
+    for _ in 0..max_retries {
+        candidates.shuffle(&mut rand::rng());
 
         // Compute the tentative max height across real + all candidates
         let tentative_max_h = std::iter::once(real_height)
@@ -846,6 +1079,19 @@ struct VreParams {
 }
 
 fn vre_params_for_network(network: &str, chain_height: u64, total_outputs: u64) -> VreParams {
+    if matches!(
+        network,
+        "hyphen-devnet-v2" | "hyphen-contract-devnet-v1" | "hyphen-neural-devnet-v1"
+    ) {
+        return VreParams {
+            min_ring_span: 0,
+            vre_min_age_bands: 0,
+            vre_age_band_width: 1,
+            vre_min_index_span_bps: 0,
+            min_chain_height: 0,
+            used_adaptive: false,
+        };
+    }
     let (target_span, target_bands, target_bw, target_bps, activation, ring_size) =
         if network.contains("mainnet") {
             (100u64, 3usize, 2048u64, 500u64, 128u64, 16u64)
@@ -901,7 +1147,7 @@ fn check_ring_vre(
     params: &VreParams,
 ) -> bool {
     let ring_size = 1 + decoys.len();
-    if ring_size < 2 {
+    if ring_size < 2 || params.vre_min_age_bands == 0 {
         return true;
     }
 
@@ -988,4 +1234,139 @@ fn audit_decoy_distribution(decoy_indices: &[u64], total_outputs: u64) -> Result
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod scan_spends_tests {
+    use super::*;
+
+    #[test]
+    fn scan_authenticates_the_reward_recipient_and_value() {
+        let cfg = hyphen_core::ChainConfig::devnet();
+        let genesis = hyphen_core::genesis::build_genesis_block(&cfg);
+        let info = ChainInfoResponse {
+            network_magic: cfg.network_magic.to_vec(),
+            consensus_params_hash: cfg.consensus_params_hash().to_vec(),
+            genesis_hash: genesis.hash().to_vec(),
+            ..Default::default()
+        };
+        let miner = hyphen_crypto::SecretKey([39; 32]);
+        let mut header = genesis.header.clone();
+        header.height = 1;
+        header.reward = 57;
+        header.miner_pubkey = *miner.public_key().as_bytes();
+        let (_, _, recipient) = stealth::generate_keys();
+        let auth = hyphen_core::BlockAuthorization::sign(
+            &header,
+            cfg.network_magic,
+            cfg.consensus_params_hash(),
+            genesis.hash(),
+            recipient.view_public,
+            recipient.spend_public,
+            &miner,
+        )
+        .unwrap();
+        let bytes = crate::wire_config(256).serialize(&auth).unwrap();
+        let mut tx = hyphen_tx::builder::build_coinbase_tx(
+            recipient.view_public,
+            recipient.spend_public,
+            header.reward,
+            1,
+            header.hash(),
+        )
+        .unwrap();
+        verify_reward_output(&header, &info, &bytes, &tx).unwrap();
+        assert!(verify_reward_output(&header, &info, &[], &tx).is_err());
+        tx.outputs[0].encrypted_amount[0] ^= 1;
+        assert!(verify_reward_output(&header, &info, &bytes, &tx).is_err());
+    }
+
+    #[test]
+    fn cached_output_recovers_only_with_its_wallet_and_amount() {
+        let keys = MasterKey::from_seed(&[61; 64]).derive_default();
+        let recipient = StealthAddress {
+            view_public: keys.view_public.compress().to_bytes(),
+            spend_public: keys.spend_public.compress().to_bytes(),
+        };
+        let (ephemeral, pk, shared) = stealth::derive_one_time_key(&recipient, 1).unwrap();
+        let commitment = hyphen_crypto::pedersen::Commitment::create(
+            71,
+            stealth::derive_commitment_blinding(&shared),
+        );
+        let mut item = WalletOutput {
+            global_index: 18,
+            value: 71,
+            ephemeral_pubkey_hex: hex::encode(ephemeral.0),
+            output_index: 1,
+            one_time_pubkey_hex: hex::encode(pk.compress().to_bytes()),
+            commitment_hex: hex::encode(commitment.0),
+            block_height: 5,
+            received_tx_hash: None,
+        };
+        assert_eq!(
+            item.recover(&keys).unwrap().spend_sk,
+            (keys.spend_secret + shared).to_bytes()
+        );
+        assert!(
+            item.recover(&MasterKey::from_seed(&[62; 64]).derive_default())
+                .is_err()
+        );
+        item.value += 1;
+        assert!(item.recover(&keys).is_err());
+        item.value = u64::MAX;
+        let mut json = serde_json::to_value(&item).unwrap();
+        assert_eq!(json["value"], u64::MAX.to_string());
+        assert_eq!(
+            serde_json::from_str::<WalletOutput>(&json.to_string())
+                .unwrap()
+                .value,
+            u64::MAX
+        );
+        json["value"] = u64::MAX.into();
+        assert_eq!(
+            serde_json::from_value::<WalletOutput>(json).unwrap().value,
+            u64::MAX
+        );
+    }
+
+    #[test]
+    fn repeated_output_keys_contribute_only_the_largest_spendable_value() {
+        let mut owned = HashMap::new();
+        let image = [12; 32];
+        for (global_index, value) in [(0, 3), (1, 5), (2, 5), (3, 2)] {
+            let output = WalletOutput {
+                global_index,
+                value,
+                ephemeral_pubkey_hex: String::new(),
+                output_index: 0,
+                one_time_pubkey_hex: String::new(),
+                commitment_hex: String::new(),
+                block_height: 1,
+                received_tx_hash: None,
+            };
+            keep_spendable_output(owned.entry(image), output);
+        }
+        assert_eq!(owned.len(), 1);
+        assert_eq!((owned[&image].global_index, owned[&image].value), (1, 5));
+    }
+
+    #[test]
+    fn spending_in_any_batch_removes_the_owned_image() {
+        let cache = tempfile::tempdir().unwrap();
+        let mut spends = ScanSpends {
+            directory: Some(cache.path()),
+            ..Default::default()
+        };
+        for byte in [1, 2, 3] {
+            for _ in 0..ScanSpends::BATCH_SIZE {
+                spends.push([byte; 32]).unwrap();
+            }
+        }
+        assert_eq!(spends.batches_written, 2);
+        assert_eq!(spends.batch.len(), ScanSpends::BATCH_SIZE);
+        let mut unspent =
+            HashMap::from([([1; 32], ()), ([2; 32], ()), ([3; 32], ()), ([4; 32], ())]);
+        spends.remove_spent(&mut unspent).unwrap();
+        assert_eq!(unspent, HashMap::from([([4; 32], ())]));
+    }
 }

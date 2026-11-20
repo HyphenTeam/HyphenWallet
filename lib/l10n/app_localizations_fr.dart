@@ -1,5 +1,8 @@
+// ignore_for_file: deprecated_member_use
+
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -7,6 +10,13 @@ import 'app_localizations.dart';
 /// The translations for French (`fr`).
 class AppLocalizationsFr extends AppLocalizations {
   AppLocalizationsFr([String locale = 'fr']) : super(locale);
+
+  @override
+  String get latestUnspentReceived =>
+      'Dernier paiement avec un solde disponible';
+
+  @override
+  String get blockConfirmations => 'Confirmations de bloc';
 
   @override
   String get appTitle => 'Hyphen Portefeuille';
@@ -20,9 +30,6 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get welcomeSubtitle =>
       'Un portefeuille de bureau pour\nles réseaux de développement Hyphen.';
-
-  @override
-  String get wotsSignatures => 'Signatures WOTS+';
 
   @override
   String get aesEncryption => 'Chiffrement authentifié';
@@ -56,21 +63,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get unlock => 'Déverrouiller';
 
   @override
-  String get forgotPasswordRestore =>
-      'Mot de passe oublié ? Restaurer avec la mnémonique';
-
-  @override
-  String get resetWallet => 'Réinitialiser le portefeuille';
-
-  @override
-  String get resetWalletMessage =>
-      'Cela supprimera les données de votre portefeuille sur cet appareil. Vous pouvez les restaurer avec votre phrase de récupération de 24 mots.\n\nAssurez-vous d\'avoir votre phrase mnémonique avant de continuer.';
-
-  @override
   String get cancel => 'Annuler';
-
-  @override
-  String get resetAndRestore => 'Réinitialiser et restaurer';
 
   @override
   String get createWallet => 'Créer le portefeuille';
@@ -83,7 +76,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get writeDownWords =>
-      'Écrivez ces 24 mots dans l\'ordre et conservez-les en lieu sûr. C\'est le SEUL moyen de récupérer votre portefeuille.';
+      'Conservez ces 24 mots dans l’ordre et le mot de passe d’origine séparément. Les deux sont nécessaires pour retrouver la même adresse.';
 
   @override
   String get neverSharePhrase =>
@@ -120,7 +113,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get passwordEncryptInfo =>
-      'Ce mot de passe chiffrera votre portefeuille sur cet appareil. Vous en aurez besoin à chaque ouverture de l\'application.';
+      'Le mot de passe chiffre le portefeuille et détermine ses clés. Pour le restaurer, saisissez le mot de passe d’origine. Un autre mot de passe donne une autre adresse.';
 
   @override
   String get confirmPassword => 'Confirmer le mot de passe';
@@ -146,7 +139,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get enterRecoveryPhrase =>
-      'Entrez votre phrase de récupération de 24 mots, séparés par des espaces.';
+      'Saisissez vos 12 ou 24 mots dans l’ordre, séparés par des espaces.';
 
   @override
   String get mnemonicHint => 'mot1 mot2 mot3 ...';
@@ -340,7 +333,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get deleteWalletWarning =>
-      'Cette action supprimera définitivement votre portefeuille de cet appareil.\n\nAssurez-vous d\'avoir sauvegardé votre phrase de récupération. Sans elle, vos fonds seront perdus à jamais.';
+      'Le portefeuille sera supprimé de cet appareil. Vérifiez d’abord que la phrase et le mot de passe d’origine permettent de retrouver la même adresse.';
 
   @override
   String get delete => 'Supprimer';
@@ -353,7 +346,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get neverShareWarning =>
-      'Ne partagez jamais votre phrase de récupération avec quiconque. Toute personne possédant ces mots peut accéder à vos fonds.';
+      'Gardez votre phrase secrète et conservez séparément le mot de passe d’origine. Les deux sont nécessaires à la restauration.';
 
   @override
   String get tapBelowToReveal => 'Appuyez ci-dessous pour révéler';

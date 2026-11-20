@@ -14,8 +14,8 @@ use courierust::courierust_server::{Server, ServerConfig};
 use rust_lib_hyphen_wallet::address::HyphenAddress;
 use rust_lib_hyphen_wallet::api::wallet::get_default_address;
 use rust_lib_hyphen_wallet::transfer::{
-    build_transaction, scan_wallet_outputs, submit_built_transaction, transaction_status,
-    BuiltTransaction, TransactionRequest, TransactionStatus,
+    BuiltTransaction, TransactionRequest, TransactionStatus, build_transaction,
+    scan_wallet_outputs, submit_built_transaction, transaction_status,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -134,6 +134,7 @@ struct Agent {
     token: Zeroizing<String>,
     wallet_address: String,
     state_path: PathBuf,
+    _state_lock: std::fs::File,
     state: AgentState,
 }
 
@@ -148,8 +149,11 @@ impl Agent {
         if config.ring_size < 2 {
             return Err("ring size must be at least 2".into());
         }
-        if !matches!(config.network.as_str(), "mainnet" | "testnet" | "devnet") {
-            return Err("network must be mainnet, testnet, or devnet".into());
+        if !matches!(
+            config.network.as_str(),
+            "mainnet" | "testnet" | "devnet" | "contract-devnet" | "neural-devnet"
+        ) {
+            return Err("unsupported payout network".into());
         }
 
         let seed_hex = Zeroizing::new(load_seed(&config.seed_file)?);
@@ -159,6 +163,16 @@ impl Agent {
         std::fs::create_dir_all(&config.state_dir)
             .map_err(|error| format!("create payout state directory: {error}"))?;
         let state_path = config.state_dir.join("payout_agent.bin");
+        let state_lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(config.state_dir.join("payout_agent.lock"))
+            .map_err(|error| format!("open payout state lock: {error}"))?;
+        state_lock
+            .try_lock()
+            .map_err(|error| format!("lock payout state: {error}"))?;
         let state = load_state_with_backup(&state_path)?;
         if state.version != STATE_VERSION {
             return Err(format!(
@@ -173,6 +187,7 @@ impl Agent {
             token,
             wallet_address,
             state_path,
+            _state_lock: state_lock,
             state,
         })
     }
@@ -281,7 +296,10 @@ impl Agent {
                     built,
                 },
             );
-            persist_state(&self.state_path, &self.state)?;
+            if let Err(error) = persist_state(&self.state_path, &self.state) {
+                self.state.records.remove(&intent_id);
+                return Err(error);
+            }
         }
 
         let record = self
@@ -457,7 +475,7 @@ impl AgentService {
                 return write_json(
                     StatusCode::BAD_REQUEST,
                     &AgentResponse::error(format!("read payout request: {error}")),
-                )
+                );
             }
         };
 
@@ -583,18 +601,14 @@ fn load_token(path: &Path) -> Result<String, String> {
 }
 
 fn load_state_with_backup(path: &Path) -> Result<AgentState, String> {
-    match load_state(path) {
-        Ok(state) => Ok(state),
-        Err(primary_error) if path.exists() => {
-            let backup = sidecar(path, "bak");
-            load_state(&backup).map_err(|backup_error| {
-                format!(
-                    "load payout state failed ({primary_error}); backup failed ({backup_error})"
-                )
-            })
-        }
-        Err(_) => Ok(AgentState::default()),
+    if path.try_exists().map_err(|error| error.to_string())? {
+        return load_state(path);
     }
+    let backup = sidecar(path, "bak");
+    if backup.try_exists().map_err(|error| error.to_string())? {
+        return load_state(&backup);
+    }
+    Ok(AgentState::default())
 }
 
 fn load_state(path: &Path) -> Result<AgentState, String> {
@@ -608,30 +622,19 @@ fn persist_state(path: &Path, state: &AgentState) -> Result<(), String> {
     let bytes = wire_config(64 * 1024 * 1024)
         .serialize(state)
         .map_err(|error| error.to_string())?;
-    let temporary = sidecar(path, "next");
-    let backup = sidecar(path, "bak");
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(&temporary)
-        .map_err(|error| error.to_string())?;
+    let directory = path
+        .parent()
+        .ok_or("payout state needs a parent directory")?;
+    let mut file = tempfile::NamedTempFile::new_in(directory).map_err(|error| error.to_string())?;
     file.write_all(&bytes).map_err(|error| error.to_string())?;
-    file.sync_all().map_err(|error| error.to_string())?;
-    drop(file);
-
-    if path.exists() {
-        if backup.exists() {
-            std::fs::remove_file(&backup).map_err(|error| error.to_string())?;
-        }
-        std::fs::rename(path, &backup).map_err(|error| error.to_string())?;
-    }
-    if let Err(error) = std::fs::rename(&temporary, path) {
-        if !path.exists() && backup.exists() {
-            let _ = std::fs::rename(&backup, path);
-        }
-        return Err(error.to_string());
-    }
+    file.as_file()
+        .sync_all()
+        .map_err(|error| error.to_string())?;
+    file.persist(path).map_err(|error| error.to_string())?;
+    #[cfg(unix)]
+    std::fs::File::open(directory)
+        .and_then(|dir| dir.sync_all())
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -812,6 +815,12 @@ mod tests {
                 .tx_data,
             vec![1, 2, 3]
         );
+        std::fs::rename(&path, sidecar(&path, "bak")).unwrap();
+        assert_eq!(load_state_with_backup(&path).unwrap().records.len(), 1);
+        std::fs::write(&path, b"incomplete").unwrap();
+        assert!(load_state_with_backup(&path).is_err());
+        persist_state(&path, &state).unwrap();
+        assert_eq!(load_state_with_backup(&path).unwrap().records.len(), 1);
         let _ = std::fs::remove_dir_all(directory);
     }
 }

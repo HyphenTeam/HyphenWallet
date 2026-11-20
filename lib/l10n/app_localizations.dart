@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -108,6 +109,18 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
+  /// No description provided for @latestUnspentReceived.
+  ///
+  /// In en, this message translates to:
+  /// **'Latest unspent payment'**
+  String get latestUnspentReceived;
+
+  /// No description provided for @blockConfirmations.
+  ///
+  /// In en, this message translates to:
+  /// **'Block confirmations'**
+  String get blockConfirmations;
+
   /// No description provided for @appTitle.
   ///
   /// In en, this message translates to:
@@ -131,12 +144,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A desktop wallet for\nHyphen development networks.'**
   String get welcomeSubtitle;
-
-  /// No description provided for @wotsSignatures.
-  ///
-  /// In en, this message translates to:
-  /// **'WOTS+ Signatures'**
-  String get wotsSignatures;
 
   /// No description provided for @aesEncryption.
   ///
@@ -198,35 +205,11 @@ abstract class AppLocalizations {
   /// **'Unlock'**
   String get unlock;
 
-  /// No description provided for @forgotPasswordRestore.
-  ///
-  /// In en, this message translates to:
-  /// **'Forgot password? Restore with mnemonic'**
-  String get forgotPasswordRestore;
-
-  /// No description provided for @resetWallet.
-  ///
-  /// In en, this message translates to:
-  /// **'Reset Wallet'**
-  String get resetWallet;
-
-  /// No description provided for @resetWalletMessage.
-  ///
-  /// In en, this message translates to:
-  /// **'This will delete your current wallet data on this device. You can restore it using your 24-word recovery phrase.\n\nMake sure you have your mnemonic phrase before proceeding.'**
-  String get resetWalletMessage;
-
   /// No description provided for @cancel.
   ///
   /// In en, this message translates to:
   /// **'Cancel'**
   String get cancel;
-
-  /// No description provided for @resetAndRestore.
-  ///
-  /// In en, this message translates to:
-  /// **'Reset & Restore'**
-  String get resetAndRestore;
 
   /// No description provided for @createWallet.
   ///
@@ -249,7 +232,7 @@ abstract class AppLocalizations {
   /// No description provided for @writeDownWords.
   ///
   /// In en, this message translates to:
-  /// **'Write down these 24 words in order and keep them in a safe place. This is the ONLY way to recover your wallet.'**
+  /// **'Back up these 24 words in order. Store the original wallet password separately. You need both to restore the same address.'**
   String get writeDownWords;
 
   /// No description provided for @neverSharePhrase.
@@ -309,7 +292,7 @@ abstract class AppLocalizations {
   /// No description provided for @passwordEncryptInfo.
   ///
   /// In en, this message translates to:
-  /// **'This password will encrypt your wallet on this device. You\'ll need it each time you open the app.'**
+  /// **'This password protects the local wallet and determines its keys. To restore an address, enter the exact password used at creation. A different password gives a different address.'**
   String get passwordEncryptInfo;
 
   /// No description provided for @confirmPassword.
@@ -351,7 +334,7 @@ abstract class AppLocalizations {
   /// No description provided for @enterRecoveryPhrase.
   ///
   /// In en, this message translates to:
-  /// **'Enter your 24-word recovery phrase, separated by spaces.'**
+  /// **'Enter your 12 or 24 recovery words in order, separated by spaces.'**
   String get enterRecoveryPhrase;
 
   /// No description provided for @mnemonicHint.
@@ -717,7 +700,7 @@ abstract class AppLocalizations {
   /// No description provided for @deleteWalletWarning.
   ///
   /// In en, this message translates to:
-  /// **'This action will permanently remove your wallet from this device.\n\nMake sure you have backed up your recovery phrase. Without it, your funds will be lost forever.'**
+  /// **'This removes the wallet from this device. Before deleting it, verify that your recovery phrase and original password restore the same receiving address.'**
   String get deleteWalletWarning;
 
   /// No description provided for @delete.
@@ -741,7 +724,7 @@ abstract class AppLocalizations {
   /// No description provided for @neverShareWarning.
   ///
   /// In en, this message translates to:
-  /// **'Never share your recovery phrase with anyone. Anyone with these words can access your funds.'**
+  /// **'Keep the recovery phrase private and back up the original wallet password separately. Restoration requires both.'**
   String get neverShareWarning;
 
   /// No description provided for @tapBelowToReveal.

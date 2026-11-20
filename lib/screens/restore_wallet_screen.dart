@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../l10n/app_localizations.dart';
+
 import 'package:provider/provider.dart';
 
 import '../services/wallet_service.dart';
@@ -158,7 +160,9 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
                   return l10n.pleaseEnter12Or24Words;
                 }
                 final words = v.trim().split(RegExp(r'\s+'));
-                if (words.length != 24) return l10n.pleaseEnter12Or24Words;
+                if (words.length != 12 && words.length != 24) {
+                  return l10n.pleaseEnter12Or24Words;
+                }
                 return null;
               },
               decoration: InputDecoration(
@@ -199,7 +203,7 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
             _stepIndicator(1),
             const SizedBox(height: 24),
             Text(
-              l10n.setPassword,
+              l10n.password,
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
@@ -222,7 +226,6 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
               textInputAction: TextInputAction.next,
               validator: (v) {
                 if (v == null || v.isEmpty) return l10n.passwordRequired;
-                if (v.length < 8) return l10n.atLeast8Chars;
                 return null;
               },
               decoration: InputDecoration(
