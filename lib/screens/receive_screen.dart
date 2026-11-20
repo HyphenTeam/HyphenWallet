@@ -11,7 +11,7 @@ import 'package:nfc_manager/nfc_manager.dart';
 import 'package:nfc_manager_ndef/nfc_manager_ndef.dart';
 
 import '../services/nfc_address.dart';
-import '../services/payment_amount.dart';
+import '../widgets/latest_receipt_tile.dart';
 import '../services/wallet_service.dart';
 
 class ReceiveScreen extends StatefulWidget {
@@ -103,16 +103,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
           children: [
             if (wallet.state.syncError.isNotEmpty)
               Text(wallet.state.syncError, style: TextStyle(color: cs.error)),
-            if (receipt != null)
-              Semantics(
-                liveRegion: true,
-                child: ListTile(
-                  title: Text(l10n.latestUnspentReceived),
-                  subtitle: SelectableText(
-                    '${formatPaymentAmount(receipt.amount)}\n${l10n.blockConfirmations} · ${receipt.confirmations}\n${receipt.hash}',
-                  ),
-                ),
-              ),
+            if (receipt != null) LatestReceiptTile(receipt: receipt),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),

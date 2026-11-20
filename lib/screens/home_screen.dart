@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
 import '../services/payment_amount.dart';
 import '../theme/app_theme.dart';
+import '../widgets/latest_receipt_tile.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -68,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 balanceFade: _balanceFade,
                 balanceSlide: _balanceSlide,
               ),
-              _ActivityTab(state: state),
+              _ActivityTab(state: state, receipt: wallet.lastReceipt),
               const SizedBox.shrink(),
               const SizedBox.shrink(),
             ],
@@ -829,7 +830,8 @@ class _SecurityStrip extends StatelessWidget {
 
 class _ActivityTab extends StatelessWidget {
   final WalletState state;
-  const _ActivityTab({required this.state});
+  final ({String hash, BigInt amount, BigInt confirmations})? receipt;
+  const _ActivityTab({required this.state, required this.receipt});
 
   @override
   Widget build(BuildContext context) {
@@ -843,7 +845,10 @@ class _ActivityTab extends StatelessWidget {
       unified.add(_UnifiedActivity(timestamp: r.timestamp, reward: r));
     }
     for (final t in state.transferActivities) {
-      unified.add(_UnifiedActivity(timestamp: t.timestamp, transfer: t));
+      // Local history is sufficient for outgoing submissions only.
+      if (t.direction == TransferDirection.sent) {
+        unified.add(_UnifiedActivity(timestamp: t.timestamp, transfer: t));
+      }
     }
     // Sort newest first
     unified.sort((a, b) => b.timestamp.compareTo(a.timestamp));
@@ -864,7 +869,9 @@ class _ActivityTab extends StatelessWidget {
             ),
           ),
         ),
-        if (unified.isEmpty)
+        if (receipt case final verified?)
+          SliverToBoxAdapter(child: LatestReceiptTile(receipt: verified)),
+        if (unified.isEmpty && receipt == null)
           SliverFillRemaining(
             child: Center(
               child: Column(

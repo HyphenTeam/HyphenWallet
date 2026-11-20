@@ -1,3 +1,4 @@
+import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +13,7 @@ import 'package:provider/provider.dart';
 
 class _ScanApi extends Fake implements RustLibApi {
   bool offline = false;
+  bool detached = false;
 
   @override
   Future<String> crateApiWalletPqTransformPassword({
@@ -50,12 +52,13 @@ class _ScanApi extends Fake implements RustLibApi {
   }) async {
     if (offline) throw StateError('disconnected');
     return WalletScanResult(
-      totalBalance: BigInt.one,
-      outputCount: BigInt.one,
+      totalBalance: detached ? BigInt.zero : BigInt.one,
+      outputCount: detached ? BigInt.zero : BigInt.one,
       scannedHeight: BigInt.one,
-      scannedHashHex: 'a' * 64,
-      outputsJson:
-          '[{"value":1,"received_tx_hash":"transfer","block_height":1}]',
+      scannedHashHex: (detached ? 'b' : 'a') * 64,
+      outputsJson: detached
+          ? '[]'
+          : '[{"value":1,"received_tx_hash":"transfer","block_height":1}]',
     );
   }
 }
@@ -110,6 +113,27 @@ void main() {
       api.offline = false;
       await wallet.refreshAll();
       expect(wallet.lastReceipt?.hash, 'transfer');
+      final id = wallet.state.activeWalletId!;
+      await storage.write(
+        key: 'transfer_history_$id',
+        value: jsonEncode([
+          {'direction': 'received', 'recipientAddress': 'forged-incoming'},
+          {'direction': 'unknown', 'recipientAddress': 'unknown-direction'},
+          {'direction': 'sent', 'recipientAddress': 'known-outgoing'},
+        ]),
+      );
+      await wallet.loadTransferHistory();
+      await tester.tap(find.text('Activity').last);
+      await tester.pumpAndSettle();
+      expect(find.text('known-outgoing'), findsOneWidget);
+      expect(find.text('forged-incoming'), findsNothing);
+      expect(find.text('unknown-direction'), findsNothing);
+      expect(find.textContaining('\ntransfer'), findsOneWidget);
+      api.detached = true;
+      await wallet.scanWalletOutputs();
+      await tester.pump();
+      expect(find.textContaining('\ntransfer'), findsNothing);
+      expect(wallet.scannedBalance, BigInt.zero);
       wallet.lock();
       expect(wallet.scannedBalance, isNull);
       expect(wallet.lastReceipt, isNull);

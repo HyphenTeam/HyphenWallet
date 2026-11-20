@@ -145,9 +145,11 @@ class TransferActivity {
 
   factory TransferActivity.fromJson(Map<String, dynamic> json) =>
       TransferActivity(
-        direction: json['direction'] == 'sent'
-            ? TransferDirection.sent
-            : TransferDirection.received,
+        direction: switch (json['direction']) {
+          'sent' => TransferDirection.sent,
+          'received' => TransferDirection.received,
+          _ => throw const FormatException('Unknown transfer direction'),
+        },
         txHashHex: json['txHashHex'] as String? ?? '',
         recipientAddress: json['recipientAddress'] as String? ?? '',
         amountAtomic: json['amountAtomic'] as String? ?? '0',
@@ -1076,9 +1078,13 @@ class WalletService extends ChangeNotifier {
       return;
     }
     try {
-      final list = (jsonDecode(raw) as List)
-          .map((e) => TransferActivity.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final list = <TransferActivity>[];
+      for (final row
+          in (jsonDecode(raw) as List).whereType<Map<String, dynamic>>()) {
+        if (row['direction'] == 'sent' || row['direction'] == 'received') {
+          list.add(TransferActivity.fromJson(row));
+        }
+      }
       _state = _state.copyWith(transferActivities: list);
       notifyListeners();
     } catch (_) {

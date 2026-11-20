@@ -24,6 +24,10 @@ The home balance comes from a successful output scan for the active wallet and R
 
 首页余额取自当前钱包在所选节点上的成功扫描，显示完整十二位小数。发现链顶变化或同步失败时，钱包暂时隐藏余额和上次入款，重扫成功后恢复。累计挖矿奖励和矿池待付款在奖励栏单列。双离线订单请保留自己签发的请求，待自己的节点同步并停止后，用上面的 `confirm` 命令核对该笔兑付。
 
+收款页和活动页都从成功的链扫描读取最近一笔仍有未花输出的入款。本地历史中的方向、金额及交易号不能证明入账。对具体订单，可让自有 HYOF 节点保持运行，用 `hyphen-offline confirm-online --rpc 127.0.0.1:48333 PACKET INVOICE OWN_ADDRESS NET --min-confirmations N` 核对。加上 `--save-settlement observed.tx` 可留存签名原文，用于复核竞争兑付。
+
+Receive and Activity show the latest incoming transfer with unspent outputs from the active scan. Local history supplies outgoing submissions. For order-specific verification, `confirm-online` checks the retained invoice against your own running HYOF node. The optional evidence file preserves the observed transaction across reorganizations.
+
 For whole-reserve payments on `offline-devnet`, `hyphen-reserve-wallet prepare` saves the ordinary signed funding transaction. `submit` relays that file and `balance` scans the resulting canonical wallet outputs. The node repository's `hyphen-offline` signer verifies a local checkpoint and the recipient's request before a conditional receipt is recorded. Back up the latest signed delivery alongside the funding terms. The Flutter NFC screen exchanges receiving addresses. [Offline payment commands and recovery](https://github.com/HyphenTeam/Hyphen/blob/main/wiki/Offline-Payments.md)
 
 ## Single-output disclosure
