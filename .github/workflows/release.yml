@@ -24,7 +24,7 @@ jobs:
         include:
           - { os: ubuntu-24.04, platform: linux, artifact: hyphen-wallet-linux-x86_64, agent: hyphen-payout-agent }
           - { os: windows-2022, platform: windows, artifact: hyphen-wallet-windows-x86_64, agent: hyphen-payout-agent.exe }
-          - { os: macos-14, platform: macos, artifact: hyphen-wallet-macos-aarch64, agent: hyphen-payout-agent }
+          - { os: macos-15, platform: macos, artifact: hyphen-wallet-macos-aarch64, agent: hyphen-payout-agent }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:
