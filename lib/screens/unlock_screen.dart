@@ -5,6 +5,7 @@ import '../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 
 import '../services/wallet_service.dart';
+import '../widgets/wallet_logo.dart';
 
 class UnlockScreen extends StatefulWidget {
   const UnlockScreen({super.key});
@@ -129,10 +130,8 @@ class _UnlockScreenState extends State<UnlockScreen>
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(20),
-                    child: Image.asset(
-                      'assets/images/Hyphen.png',
-                      width: 80,
-                      height: 80,
+                    child: WalletLogo(
+                      size: 80,
                       errorBuilder: (_, _, _) => Container(
                         width: 80,
                         height: 80,

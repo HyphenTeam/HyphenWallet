@@ -42,6 +42,7 @@ flutter:
 
   assets:
     - assets/images/Hyphen.png
+    - assets/images/Hyphen-480.png
     - assets/fonts/GoogleSans-OFL.txt
 
   fonts:

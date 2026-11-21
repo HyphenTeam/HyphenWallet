@@ -5,6 +5,7 @@ import '../l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 
 import '../services/wallet_service.dart';
+import '../widgets/wallet_logo.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -83,10 +84,8 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(24),
-                    child: Image.asset(
-                      'assets/images/Hyphen.png',
-                      width: 100,
-                      height: 100,
+                    child: WalletLogo(
+                      size: 100,
                       errorBuilder: (_, _, _) => Container(
                         width: 100,
                         height: 100,

@@ -169,6 +169,8 @@ class RewardActivity {
   final String finderPubkeyHex;
   final bool directCoinbase;
 
+  String get eventId => '$source:$height:$blockHashHex:$amountAtomic:$kind';
+
   const RewardActivity({
     required this.source,
     required this.height,
@@ -1374,9 +1376,7 @@ class WalletService extends ChangeNotifier {
     final dedupedActivities = <RewardActivity>[];
     final seen = <String>{};
     for (final activity in activities) {
-      final key =
-          '${activity.source}:${activity.height}:${activity.blockHashHex}:${activity.amountAtomic}:${activity.kind}';
-      if (seen.add(key)) {
+      if (seen.add(activity.eventId)) {
         dedupedActivities.add(activity);
       }
       if (dedupedActivities.length >= 128) {

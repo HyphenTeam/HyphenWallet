@@ -240,8 +240,8 @@ class _ActivitySummaryCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    _formatAtomicAmount(activity.amountAtomic),
+                  _RewardAmount(
+                    activity: activity,
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -261,6 +261,23 @@ class _ActivitySummaryCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _RewardAmount extends StatelessWidget {
+  final RewardActivity activity;
+  final TextStyle style;
+
+  const _RewardAmount({required this.activity, required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    final amount = Text(
+      _formatAtomicAmount(activity.amountAtomic),
+      style: DefaultTextStyle.of(context).style.merge(style),
+    );
+    if (MediaQuery.disableAnimationsOf(context)) return amount;
+    return Hero(tag: activity.eventId, child: amount);
   }
 }
 
@@ -294,8 +311,8 @@ class _DetailHero extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            _formatAtomicAmount(activity.amountAtomic),
+          _RewardAmount(
+            activity: activity,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 28,

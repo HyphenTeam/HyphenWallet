@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_theme.dart';
@@ -57,6 +55,7 @@ class _PerspectiveCardState extends State<PerspectiveCard>
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
+    _resetController.stop();
     final box = context.findRenderObject() as RenderBox;
     final size = box.size;
     final local = box.globalToLocal(details.globalPosition);
@@ -76,18 +75,19 @@ class _PerspectiveCardState extends State<PerspectiveCard>
 
   @override
   Widget build(BuildContext context) {
+    final reduced = MediaQuery.disableAnimationsOf(context);
     return GestureDetector(
-      onPanUpdate: _onPanUpdate,
-      onPanEnd: _onPanEnd,
-      onPanCancel: () => _onPanEnd(DragEndDetails()),
-      child: AnimatedContainer(
-        duration: _touching ? Duration.zero : const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-        transformAlignment: Alignment.center,
-        transform: Matrix4.identity()
-          ..setEntry(3, 2, 0.001)
-          ..rotateX(_rotX)
-          ..rotateY(_rotY),
+      onPanUpdate: reduced ? null : _onPanUpdate,
+      onPanEnd: reduced ? null : _onPanEnd,
+      onPanCancel: reduced ? null : () => _onPanEnd(DragEndDetails()),
+      child: Transform(
+        alignment: Alignment.center,
+        transform: reduced
+            ? Matrix4.identity()
+            : (Matrix4.identity()
+                ..setEntry(3, 2, 0.001)
+                ..rotateX(_rotX)
+                ..rotateY(_rotY)),
         child: Container(
           decoration: BoxDecoration(
             borderRadius: widget.borderRadius,
@@ -112,77 +112,32 @@ class _PerspectiveCardState extends State<PerspectiveCard>
   }
 }
 
-/// A floating orb with animated gradient shimmer — used as a decorative
-/// background element on welcome/node-mode screens.
-class FloatingOrb extends StatefulWidget {
+class FloatingOrb extends StatelessWidget {
   final double size;
   final Color color1;
   final Color color2;
-  final Duration period;
-  final Offset offset;
 
   const FloatingOrb({
     super.key,
     this.size = 120,
     this.color1 = HyphenColors.primary,
     this.color2 = HyphenColors.accent,
-    this.period = const Duration(seconds: 4),
-    this.offset = Offset.zero,
   });
 
   @override
-  State<FloatingOrb> createState() => _FloatingOrbState();
-}
-
-class _FloatingOrbState extends State<FloatingOrb>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(vsync: this, duration: widget.period)
-      ..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, _) {
-        final t = Curves.easeInOut.transform(_ctrl.value);
-        final dy = math.sin(t * math.pi) * 12;
-        return Transform.translate(
-          offset: widget.offset + Offset(0, dy),
-          child: Container(
-            width: widget.size,
-            height: widget.size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [
-                  Color.lerp(
-                    widget.color1,
-                    widget.color2,
-                    t,
-                  )!.withValues(alpha: 0.25),
-                  Color.lerp(
-                    widget.color2,
-                    widget.color1,
-                    t,
-                  )!.withValues(alpha: 0.05),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [
+            color1.withValues(alpha: 0.25),
+            color2.withValues(alpha: 0.05),
+          ],
+        ),
+      ),
     );
   }
 }

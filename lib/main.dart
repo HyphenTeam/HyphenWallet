@@ -140,10 +140,19 @@ class HyphenWalletApp extends StatelessWidget {
     return PageRouteBuilder(
       settings: settings,
       pageBuilder: (_, _, _) => page,
-      transitionsBuilder: (_, animation, _, child) {
+      transitionsBuilder: (context, animation, _, child) {
+        if (MediaQuery.disableAnimationsOf(context)) return child;
+        final progress = animation.drive(
+          CurveTween(curve: Curves.easeOutCubic),
+        );
         return FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-          child: child,
+          opacity: progress,
+          child: SlideTransition(
+            position: progress.drive(
+              Tween(begin: const Offset(0, 0.025), end: Offset.zero),
+            ),
+            child: child,
+          ),
         );
       },
       transitionDuration: const Duration(milliseconds: 300),

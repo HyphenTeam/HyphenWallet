@@ -13,61 +13,11 @@ class NodeModeScreen extends StatefulWidget {
   State<NodeModeScreen> createState() => _NodeModeScreenState();
 }
 
-class _NodeModeScreenState extends State<NodeModeScreen>
-    with TickerProviderStateMixin {
+class _NodeModeScreenState extends State<NodeModeScreen> {
   NodeMode? _selected;
-  late AnimationController _lightController;
-  late AnimationController _fullController;
-  late AnimationController _pulseController;
-  late Animation<double> _lightScale;
-  late Animation<double> _fullScale;
-  late Animation<double> _pulse;
-
-  @override
-  void initState() {
-    super.initState();
-    _lightController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _fullController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _lightScale = CurvedAnimation(
-      parent: _lightController,
-      curve: Curves.elasticOut,
-    );
-    _fullScale = CurvedAnimation(
-      parent: _fullController,
-      curve: Curves.elasticOut,
-    );
-    _pulse = Tween<double>(begin: 0.95, end: 1.05).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _lightController.dispose();
-    _fullController.dispose();
-    _pulseController.dispose();
-    super.dispose();
-  }
 
   void _select(NodeMode mode) {
     setState(() => _selected = mode);
-    if (mode == NodeMode.light) {
-      _lightController.forward(from: 0);
-      _fullController.reverse();
-    } else {
-      _fullController.forward(from: 0);
-      _lightController.reverse();
-    }
   }
 
   Future<void> _confirm() async {
@@ -89,14 +39,7 @@ class _NodeModeScreenState extends State<NodeModeScreen>
           child: Column(
             children: [
               const SizedBox(height: 40),
-              ScaleTransition(
-                scale: _pulse,
-                child: Icon(
-                  Icons.account_tree_rounded,
-                  size: 56,
-                  color: cs.primary,
-                ),
-              ),
+              Icon(Icons.account_tree_rounded, size: 56, color: cs.primary),
               const SizedBox(height: 24),
               Text(
                 l10n.chooseNodeMode,
@@ -120,7 +63,6 @@ class _NodeModeScreenState extends State<NodeModeScreen>
                     _ModeCard(
                       mode: NodeMode.light,
                       selected: _selected == NodeMode.light,
-                      scale: _lightScale,
                       icon: Icons.bolt_rounded,
                       iconColor: cs.secondary,
                       title: l10n.lightNode,
@@ -136,7 +78,6 @@ class _NodeModeScreenState extends State<NodeModeScreen>
                     _ModeCard(
                       mode: NodeMode.full,
                       selected: _selected == NodeMode.full,
-                      scale: _fullScale,
                       icon: Icons.dns_rounded,
                       iconColor: HyphenColors.brightGreen,
                       title: l10n.fullNode,
@@ -185,7 +126,6 @@ class _NodeModeScreenState extends State<NodeModeScreen>
 class _ModeCard extends StatelessWidget {
   final NodeMode mode;
   final bool selected;
-  final Animation<double> scale;
   final IconData icon;
   final Color iconColor;
   final String title;
@@ -196,7 +136,6 @@ class _ModeCard extends StatelessWidget {
   const _ModeCard({
     required this.mode,
     required this.selected,
-    required this.scale,
     required this.icon,
     required this.iconColor,
     required this.title,
@@ -208,18 +147,21 @@ class _ModeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return ScaleTransition(
-      scale: selected ? scale : const AlwaysStoppedAnimation(1.0),
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 220);
+    return AnimatedScale(
+      scale: selected ? 1.015 : 1,
+      curve: Curves.easeOutCubic,
+      duration: duration,
       child: GestureDetector(
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
+          duration: duration,
           curve: Curves.easeOutCubic,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: selected
-                ? cs.surfaceContainerHighest
-                : cs.surfaceContainerHighest,
+            color: cs.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: selected ? iconColor : cs.outline,
@@ -238,7 +180,7 @@ class _ModeCard extends StatelessWidget {
           child: Row(
             children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
+                duration: duration,
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
