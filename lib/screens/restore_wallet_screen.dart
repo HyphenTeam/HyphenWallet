@@ -160,7 +160,7 @@ class _RestoreWalletScreenState extends State<RestoreWalletScreen> {
                   return l10n.pleaseEnter12Or24Words;
                 }
                 final words = v.trim().split(RegExp(r'\s+'));
-                  if (!const {12, 15, 18, 21, 24}.contains(words.length)) {
+                if (!const {12, 15, 18, 21, 24}.contains(words.length)) {
                   return l10n.pleaseEnter12Or24Words;
                 }
                 return null;
