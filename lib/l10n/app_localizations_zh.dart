@@ -132,13 +132,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get restoreWallet => '恢复钱包';
 
   @override
-  String get enterRecoveryPhrase => '请按顺序输入 12 或 24 个助记词，用空格分隔。';
+  String get enterRecoveryPhrase => '请按顺序输入助记词。HYN3 助记词须保留首词的 hy3- 和末词的 -hy3。';
 
   @override
   String get mnemonicHint => '单词1 单词2 单词3 ...';
 
   @override
-  String get pleaseEnter12Or24Words => '请输入12或24个单词';
+  String get pleaseEnter12Or24Words => '请输入 12、15、18、21 或 24 个单词';
 
   @override
   String get continueButton => '继续';

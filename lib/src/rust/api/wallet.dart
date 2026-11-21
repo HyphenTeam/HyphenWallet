@@ -7,17 +7,17 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `decrypt_current_wallet`, `decrypt_legacy_wallet`, `derive_argon2id_key`, `derive_legacy_wallet_key`, `legacy_xof_encrypt`, `wallet_from_mnemonic`
+// These functions are ignored because they are not marked as `pub`: `decrypt_current_wallet`, `decrypt_legacy_wallet`, `derive_argon2id_key`, `derive_legacy_wallet_key`, `legacy_xof_encrypt`, `recovery_seed`, `wallet_from_mnemonic`, `wallet_text`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `EncryptedWallet`
 
-/// Generate a new BIP39 mnemonic phrase.
+/// Generate a marked HYN3 recovery phrase.
 ///
 /// `word_count`: 12, 15, 18, 21, or 24.
 /// Returns the mnemonic as a space-separated string.
 Future<String> generateMnemonic({required int wordCount}) =>
     RustLib.instance.api.crateApiWalletGenerateMnemonic(wordCount: wordCount);
 
-/// Validate a BIP39 mnemonic phrase.
+/// Validate marked HYN3 words or an unmarked historical phrase.
 ///
 /// Returns true if the mnemonic is valid (correct word count, valid words,
 /// correct checksum).
@@ -37,20 +37,16 @@ Future<WalletCreateResult> createWalletWithWordCount({
   wordCount: wordCount,
 );
 
-/// Create a wallet using the historical password-to-passphrase transform.
-///
-/// This compatibility transform does not add entropy to a weak password and
-/// must not be described as quantum-resistant.
+/// Create a wallet with a fresh HYN3 recovery phrase and a recovery password.
 Future<WalletCreateResult> createWalletWithPassword({
   required String password,
 }) => RustLib.instance.api.crateApiWalletCreateWalletWithPassword(
   password: password,
 );
 
-/// Restore a wallet from an existing BIP39 mnemonic.
+/// Restore a wallet with its derivation passphrase.
 ///
-/// Pass the original passphrase bytes. Flutter passes the result of
-/// `pq_transform_password`. `restore_wallet_with_password` accepts the original password.
+/// `restore_wallet_with_password` accepts the original Flutter password.
 Future<WalletCreateResult> restoreWallet({
   required String mnemonic,
   required String passphrase,
@@ -59,7 +55,7 @@ Future<WalletCreateResult> restoreWallet({
   passphrase: passphrase,
 );
 
-/// Restore a wallet using the historical password-to-passphrase transform.
+/// Restore from the original password, selecting the derivation by phrase format.
 Future<WalletCreateResult> restoreWalletWithPassword({
   required String mnemonic,
   required String password,
@@ -85,7 +81,7 @@ Future<String> pqTransformPassword({required String password}) =>
 
 /// Derive keys for a specific BIP44 path: m/44'/868'/account'/change/index.
 ///
-/// `seed_hex` is the hex-encoded 64-byte BIP39 seed.
+/// `seed_hex` encodes the 64-byte wallet seed.
 /// `is_mainnet` determines address format.
 Future<KeyPairInfo> deriveKey({
   required String seedHex,

@@ -5,8 +5,7 @@
 // cross-platform FFI compatibility.
 //
 // Wallet Features:
-//   - BIP39 mnemonic generation and validation (12/15/18/21/24 words)
-//   - BIP39 seed derivation (PBKDF2-HMAC-SHA512, 2048 iterations)
+//   - Versioned recovery words and historical BIP39 seed recovery
 //   - ICD key derivation with BIP44 path structure (m/44'/868'/account'/change/index)
 //   - Experimental Ed25519 + WOTS message-signature encoding
 //   - Hyphen address generation (hy1... format with blake3 checksum)
@@ -53,7 +52,7 @@ pub struct EncryptedWallet {
     pub data: Vec<u8>,
 }
 
-/// Generate a new BIP39 mnemonic phrase.
+/// Generate a marked HYN3 recovery phrase.
 ///
 /// `word_count`: 12, 15, 18, 21, or 24.
 /// Returns the mnemonic as a space-separated string.
@@ -61,7 +60,7 @@ pub fn generate_mnemonic(word_count: u8) -> Result<String, String> {
     bip39::generate_mnemonic(word_count as usize)
 }
 
-/// Validate a BIP39 mnemonic phrase.
+/// Validate marked HYN3 words or an unmarked historical phrase.
 ///
 /// Returns true if the mnemonic is valid (correct word count, valid words,
 /// correct checksum).
@@ -83,30 +82,27 @@ pub fn create_wallet_with_word_count(word_count: u8) -> Result<WalletCreateResul
     wallet_from_mnemonic(mnemonic, String::new())
 }
 
-/// Create a wallet using the historical password-to-passphrase transform.
-///
-/// This compatibility transform does not add entropy to a weak password and
-/// must not be described as quantum-resistant.
+/// Create a wallet with a fresh HYN3 recovery phrase and a recovery password.
 pub fn create_wallet_with_password(password: String) -> Result<WalletCreateResult, String> {
-    let password = Zeroizing::new(password);
     let mnemonic = bip39::generate_mnemonic(24)?;
-    let pq_passphrase = pq_transform_password(&password);
-    wallet_from_mnemonic(mnemonic, pq_passphrase)
+    wallet_from_mnemonic(mnemonic, password)
 }
 
-/// Restore a wallet from an existing BIP39 mnemonic.
+/// Restore a wallet with its derivation passphrase.
 ///
-/// Pass the original passphrase bytes. Flutter passes the result of
-/// `pq_transform_password`. `restore_wallet_with_password` accepts the original password.
+/// `restore_wallet_with_password` accepts the original Flutter password.
 pub fn restore_wallet(mnemonic: String, passphrase: String) -> Result<WalletCreateResult, String> {
     wallet_from_mnemonic(mnemonic, passphrase)
 }
 
-/// Restore a wallet using the historical password-to-passphrase transform.
+/// Restore from the original password, selecting the derivation by phrase format.
 pub fn restore_wallet_with_password(
     mnemonic: String,
     password: String,
 ) -> Result<WalletCreateResult, String> {
+    if mnemonic.starts_with(bip39::PREFIX) {
+        return wallet_from_mnemonic(mnemonic, password);
+    }
     let password = Zeroizing::new(password);
     let pq_passphrase = pq_transform_password(&password);
     wallet_from_mnemonic(mnemonic, pq_passphrase)
@@ -146,10 +142,7 @@ fn wallet_from_mnemonic(
 ) -> Result<WalletCreateResult, String> {
     let mut mnemonic = Zeroizing::new(mnemonic);
     let passphrase = Zeroizing::new(passphrase);
-    if !bip39::validate_mnemonic(&mnemonic) {
-        return Err("invalid mnemonic phrase".into());
-    }
-    let seed = zeroize::Zeroizing::new(bip39::mnemonic_to_seed(&mnemonic, &passphrase));
+    let seed = recovery_seed(&mnemonic, &passphrase)?;
     let mk = MasterKey::from_seed(&seed);
     let keys = mk.derive_default();
 
@@ -171,7 +164,7 @@ fn wallet_from_mnemonic(
 
 /// Derive keys for a specific BIP44 path: m/44'/868'/account'/change/index.
 ///
-/// `seed_hex` is the hex-encoded 64-byte BIP39 seed.
+/// `seed_hex` encodes the 64-byte wallet seed.
 /// `is_mainnet` determines address format.
 pub fn derive_key(
     seed_hex: String,
@@ -231,13 +224,30 @@ pub fn get_derivation_path(account: u32, change: u32, index: u32) -> String {
 
 /// Derive a seed from mnemonic (returns hex-encoded 64-byte seed).
 pub fn mnemonic_to_seed_hex(mnemonic: String, passphrase: String) -> Result<String, String> {
-    if !bip39::validate_mnemonic(&mnemonic) {
-        return Err("invalid mnemonic phrase".into());
-    }
     let mnemonic = zeroize::Zeroizing::new(mnemonic);
     let passphrase = zeroize::Zeroizing::new(passphrase);
-    let seed = zeroize::Zeroizing::new(bip39::mnemonic_to_seed(&mnemonic, &passphrase));
+    let seed = recovery_seed(&mnemonic, &passphrase)?;
     Ok(hex::encode(seed.as_slice()))
+}
+
+fn recovery_seed(phrase: &str, passphrase: &str) -> Result<Zeroizing<[u8; 64]>, String> {
+    if !bip39::validate_mnemonic(phrase) {
+        return Err("invalid mnemonic phrase".into());
+    }
+    if !phrase.starts_with(bip39::PREFIX) {
+        return Ok(Zeroizing::new(bip39::mnemonic_to_seed(phrase, passphrase)));
+    }
+    let salt = Zeroizing::new(blake3::derive_key(
+        "Hyphen recovery salt v3",
+        phrase.as_bytes(),
+    ));
+    let key = derive_argon2id_key(passphrase.as_bytes(), salt[..16].try_into().unwrap())?;
+    let mut expand = blake3::Hasher::new_keyed(&key);
+    expand.update(b"Hyphen recovery seed v3\0");
+    expand.update(phrase.as_bytes());
+    let mut seed = Zeroizing::new([0; 64]);
+    expand.finalize_xof().fill(seed.as_mut_slice());
+    Ok(seed)
 }
 
 /// Retained for bridge compatibility. The stateless WOTS signer is disabled.
@@ -639,6 +649,27 @@ mod encrypted_wallet_tests {
     }
 
     #[test]
+    fn marked_recovery_matches_independent_kdf_and_survives_encrypted_migration() {
+        let phrase = "hy3-abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon able-hy3";
+        let pass = "TREZOR";
+        let restored = restore_wallet_with_password(phrase.into(), pass.into()).unwrap();
+        assert_eq!(
+            restored.seed_hex,
+            "4d843009d9de540b8cdbaf0b879a8f2a25547c6785f089bca003b5c0fec683f7b0f30d76167c721aa1d27cce1b7830dc718510c0e6d902dbce0fae31a6d6f87d"
+        );
+        let envelope = encrypt_wallet(phrase.into(), pass.into()).unwrap();
+        let decoded = decrypt_wallet(envelope, pass.into()).unwrap();
+        let reopened = restore_wallet_with_password(decoded, pass.into()).unwrap();
+        assert_eq!(restored.address_testnet, reopened.address_testnet);
+        assert_ne!(
+            restored.address_testnet,
+            restore_wallet_with_password(phrase.into(), "other".into())
+                .unwrap()
+                .address_testnet
+        );
+    }
+
+    #[test]
     fn current_envelope_roundtrips_and_authenticates_every_byte() {
         let encrypted = encrypt_wallet(MNEMONIC.into(), "correct horse".into()).unwrap();
         assert!(encrypted.starts_with(WALLET_MAGIC));
@@ -676,9 +707,18 @@ mod encrypted_wallet_tests {
         envelope.extend_from_slice(mac.as_bytes());
         envelope.extend_from_slice(&ciphertext);
 
+        let password = String::from_utf8(password.to_vec()).unwrap();
+        let decoded = decrypt_wallet(envelope, password.clone()).unwrap();
+        assert_eq!(decoded, MNEMONIC);
+        let original = restore_wallet_with_password(decoded.clone(), password.clone()).unwrap();
+        let current = encrypt_wallet(decoded, password.clone()).unwrap();
+        assert!(current.starts_with(WALLET_MAGIC));
+        let reopened = decrypt_wallet(current, password.clone()).unwrap();
         assert_eq!(
-            decrypt_wallet(envelope, String::from_utf8(password.to_vec()).unwrap()).unwrap(),
-            MNEMONIC
+            restore_wallet_with_password(reopened, password)
+                .unwrap()
+                .address_testnet,
+            original.address_testnet
         );
     }
 }

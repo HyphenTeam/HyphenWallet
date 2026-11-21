@@ -15,7 +15,7 @@ use std::{
 };
 use zeroize::Zeroizing;
 
-const USAGE: &str = "hyphen-reserve-wallet address | balance RPC | prepare RPC ADDRESS AMOUNT_ATOMIC FEE_ATOMIC SIGNED_FILE | submit RPC SIGNED_FILE\nFor address, balance and prepare, pipe the raw 64-byte BIP39 seed to stdin. Uses account 0 on offline-devnet.";
+const USAGE: &str = "hyphen-reserve-wallet address | balance RPC | prepare RPC ADDRESS AMOUNT_ATOMIC FEE_ATOMIC SIGNED_FILE | submit RPC SIGNED_FILE\nFor address, balance and prepare, pipe the raw 64-byte BIP39 seed to stdin. Uses account 0 on neural-devnet.";
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
@@ -44,10 +44,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             vre_used_adaptive: false,
         };
         let result =
-            submit_transaction_for_network(host.clone(), rpc.port(), signed, Some(*b"HYOF"))?;
+            submit_transaction_for_network(host.clone(), rpc.port(), signed, Some(*b"HYN3"))?;
         if !result.accepted
             && matches!(
-                transaction_status_for_network(host, rpc.port(), &hash, Some(*b"HYOF"))?,
+                transaction_status_for_network(host, rpc.port(), &hash, Some(*b"HYN3"))?,
                 TransactionStatus::Unknown
             )
         {
@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 owned_outputs_json: scan.outputs_json,
                 ring_size: 4,
             },
-            Some(*b"HYOF"),
+            Some(*b"HYN3"),
         )?;
         let dir = out
             .parent()

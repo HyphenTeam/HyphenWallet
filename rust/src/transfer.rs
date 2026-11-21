@@ -320,7 +320,7 @@ pub fn scan_reserve_wallet(
         seed_hex,
         0,
         0..=u64::MAX,
-        ScanNetwork::Exact(*b"HYOF"),
+        ScanNetwork::Exact(*b"HYN3"),
         None,
     )
 }
@@ -583,25 +583,19 @@ fn verify_reward_output(
         || tx.fee != 0
         || tx.extra != header.height.to_le_bytes()
         || !tx.prunable.clsag_signatures.is_empty()
-        || header.version != hyphen_core::FROZEN_BLOCK_VERSION
-        || auth.version != hyphen_core::authorization::BLOCK_AUTHORIZATION_VERSION
-        || auth.reward_view_public == [0; 32]
-        || auth.reward_spend_public == [0; 32]
     {
         return Err("invalid reward metadata".into());
     }
-    if matches!(info.network_magic.as_slice(), b"HYCD" | b"HYAC" | b"HYOF")
+    if info.network_magic.as_slice() == b"HYN3"
         && header.extra_nonce
-            != *hyphen_crypto::blake3_hash_many(&[
-                b"Hyphen/reward-recipient/v1",
+            != hyphen_core::authorization::reward_commitment(
                 &auth.reward_view_public,
                 &auth.reward_spend_public,
-            ])
-            .as_bytes()
+            )
     {
         return Err("reward keys differ from the block header commitment".into());
     }
-    let digest = hyphen_core::authorization_digest(
+    auth.verify(
         header,
         info.network_magic
             .as_slice()
@@ -617,16 +611,8 @@ fn verify_reward_output(
                 .try_into()
                 .map_err(|_| "invalid genesis hash")?,
         ),
-        auth.reward_view_public,
-        auth.reward_spend_public,
-    );
-    let miner = ed25519_dalek::VerifyingKey::from_bytes(&header.miner_pubkey)
-        .map_err(|_| "invalid miner key")?;
-    let signature = ed25519_dalek::Signature::from_slice(&auth.miner_signature)
-        .map_err(|_| "invalid signature length")?;
-    miner
-        .verify_strict(digest.as_bytes(), &signature)
-        .map_err(|_| "invalid miner signature")?;
+    )
+    .map_err(|error| format!("invalid miner authorization: {error}"))?;
     let recipient = StealthAddress {
         view_public: auth.reward_view_public,
         spend_public: auth.reward_spend_public,
@@ -1156,14 +1142,7 @@ struct VreParams {
 }
 
 fn vre_params_for_network(network: &str, chain_height: u64, total_outputs: u64) -> VreParams {
-    if matches!(
-        network,
-        "hyphen-devnet-v2"
-            | "hyphen-contract-devnet-v1"
-            | "hyphen-neural-devnet-v1"
-            | "hyphen-compute-devnet-v1"
-            | "hyphen-offline-devnet-v1"
-    ) {
+    if network == "hyphen-neural-devnet-v3" {
         return VreParams {
             min_ring_span: 0,
             vre_min_age_bands: 0,
@@ -1323,7 +1302,7 @@ mod scan_spends_tests {
 
     #[test]
     fn scan_authenticates_the_reward_recipient_and_value() {
-        let cfg = hyphen_core::ChainConfig::devnet();
+        let cfg = hyphen_core::ChainConfig::neural_devnet();
         let genesis = hyphen_core::genesis::build_genesis_block(&cfg);
         let info = ChainInfoResponse {
             network_magic: cfg.network_magic.to_vec(),
@@ -1337,6 +1316,10 @@ mod scan_spends_tests {
         header.reward = 57;
         header.miner_pubkey = *miner.public_key().as_bytes();
         let (_, _, recipient) = stealth::generate_keys();
+        header.extra_nonce = hyphen_core::authorization::reward_commitment(
+            &recipient.view_public,
+            &recipient.spend_public,
+        );
         let auth = hyphen_core::BlockAuthorization::sign(
             &header,
             cfg.network_magic,

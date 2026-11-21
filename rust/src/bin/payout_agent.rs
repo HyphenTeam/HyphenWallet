@@ -149,16 +149,7 @@ impl Agent {
         if config.ring_size < 2 {
             return Err("ring size must be at least 2".into());
         }
-        if !matches!(
-            config.network.as_str(),
-            "mainnet"
-                | "testnet"
-                | "devnet"
-                | "contract-devnet"
-                | "neural-devnet"
-                | "compute-devnet"
-                | "offline-devnet"
-        ) {
+        if config.network != "neural-devnet" {
             return Err("unsupported payout network".into());
         }
 
@@ -722,11 +713,11 @@ fn parse_args() -> Result<Config, String> {
             .map_err(|error| format!("invalid --node-port: {error}"))?,
         seed_file: PathBuf::from(required("--seed-file")?),
         token_file: PathBuf::from(required("--token-file")?),
-        state_dir: PathBuf::from(optional("--state-dir", "payout_agent_state")),
+        state_dir: PathBuf::from(optional("--state-dir", "payout_agent_state/neural-v3")),
         account: optional("--account", "0")
             .parse()
             .map_err(|error| format!("invalid --account: {error}"))?,
-        network: optional("--network", "devnet"),
+        network: optional("--network", "neural-devnet"),
         ring_size: optional("--ring-size", "4")
             .parse()
             .map_err(|error| format!("invalid --ring-size: {error}"))?,

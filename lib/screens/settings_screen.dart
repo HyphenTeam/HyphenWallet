@@ -49,7 +49,10 @@ class SettingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               _sectionHeader(l10n.network),
-              _networkTile(context, wallet, l10n, state),
+              ListTile(
+                title: Text(l10n.currentNetwork),
+                subtitle: const Text(kNeuralNetwork),
+              ),
               _nodeModeTile(context, wallet, l10n, state),
               _nodeConnectionTile(context, wallet, l10n, state),
               _nodeEndpointTile(context, wallet, l10n, state),
@@ -491,71 +494,6 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _networkTile(
-    BuildContext context,
-    WalletService wallet,
-    AppLocalizations l10n,
-    WalletState state,
-  ) {
-    final cs = Theme.of(context).colorScheme;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.dns_outlined, color: cs.primary, size: 22),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    l10n.currentNetwork,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<HyphenNetwork>(
-                segments: [
-                  ButtonSegment(
-                    value: HyphenNetwork.mainnet,
-                    label: Text(
-                      l10n.mainnet,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                  ButtonSegment(
-                    value: HyphenNetwork.testnet,
-                    label: Text(
-                      l10n.testnet,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                ],
-                selected: {state.network},
-                onSelectionChanged: (v) => wallet.switchNetwork(v.first),
-                style: ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _nodeModeTile(
     BuildContext context,
     WalletService wallet,
@@ -901,14 +839,8 @@ class SettingsScreen extends StatelessWidget {
     WalletState state,
   ) {
     final controller = TextEditingController(text: state.rpcEndpoint);
-    final savedNodes = <String>[
-      state.network == HyphenNetwork.mainnet
-          ? kDefaultMainnetRpcEndpoint
-          : kDefaultRpcEndpoint,
-    ];
-    final defaultEndpoint = state.network == HyphenNetwork.mainnet
-        ? kDefaultMainnetRpcEndpoint
-        : kDefaultRpcEndpoint;
+    final savedNodes = <String>[kDefaultRpcEndpoint];
+    const defaultEndpoint = kDefaultRpcEndpoint;
     if (state.rpcEndpoint != defaultEndpoint &&
         !savedNodes.contains(state.rpcEndpoint)) {
       savedNodes.add(state.rpcEndpoint);

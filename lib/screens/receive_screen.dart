@@ -143,9 +143,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    wallet.state.network == HyphenNetwork.mainnet
-                        ? l10n.mainnetAddress
-                        : l10n.testnetAddress,
+                    l10n.yourAddress,
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,

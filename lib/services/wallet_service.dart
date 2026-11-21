@@ -12,7 +12,6 @@ import 'package:hyphen_wallet/src/rust/frb_generated.dart';
 
 const _kWalletList = 'wallet_list';
 const _kActiveWalletId = 'active_wallet_id';
-const _kCurrentNetwork = 'current_network';
 const _kAppLocale = 'app_locale';
 const _kNodeMode = 'node_mode';
 const _kBiometricEnabled = 'biometric_enabled';
@@ -24,15 +23,13 @@ const _kExplorerApiEndpoint = 'explorer_api_endpoint';
 const _kThemeColorIndex = 'theme_color_index';
 const _kOwnedOutputs = 'owned_outputs_v2';
 const _kOutputCacheMigrated = 'output_cache_v2_migrated';
-const _kTransferHistory = 'transfer_history';
+const kNeuralNetwork = 'hyphen-neural-devnet-v3';
+const _kTransferHistory = 'transfer_history_HYN3';
 
-/// RPC ports per profile. The non-mainnet node this wallet points at is the
-/// devnet profile, which listens on 48333; nothing serves testnet's 38333.
+/// The neural development network serves binary RPC on port 48333.
 const kDefaultRpcPort = 48333;
-const kDefaultMainnetRpcPort = 18333;
 
-const kDefaultRpcEndpoint = 'bytesnap.tech:48333';
-const kDefaultMainnetRpcEndpoint = 'bytesnap.tech:18333';
+const kDefaultRpcEndpoint = '127.0.0.1:48333';
 
 (String host, int port)? _parseEndpoint(String raw, int defaultPort) {
   final trimmed = raw.trim();
@@ -69,8 +66,6 @@ String _deriveExplorerApiEndpoint(String rpcEndpoint) {
   }
   return '${parsed.$1}:8080';
 }
-
-enum HyphenNetwork { mainnet, testnet }
 
 enum NodeMode {
   light,
@@ -198,7 +193,7 @@ class WalletState {
   final String? mnemonic;
   final String? viewPublicHex;
   final String? spendPublicHex;
-  final HyphenNetwork network;
+
   final String? activeWalletId;
   final List<WalletInfo> wallets;
   final NodeMode nodeMode;
@@ -231,7 +226,7 @@ class WalletState {
     this.mnemonic,
     this.viewPublicHex,
     this.spendPublicHex,
-    this.network = HyphenNetwork.testnet,
+
     this.activeWalletId,
     this.wallets = const [],
     this.nodeMode = NodeMode.light,
@@ -263,7 +258,7 @@ class WalletState {
     String? mnemonic,
     String? viewPublicHex,
     String? spendPublicHex,
-    HyphenNetwork? network,
+
     String? activeWalletId,
     List<WalletInfo>? wallets,
     NodeMode? nodeMode,
@@ -294,7 +289,7 @@ class WalletState {
       mnemonic: mnemonic ?? this.mnemonic,
       viewPublicHex: viewPublicHex ?? this.viewPublicHex,
       spendPublicHex: spendPublicHex ?? this.spendPublicHex,
-      network: network ?? this.network,
+
       activeWalletId: activeWalletId ?? this.activeWalletId,
       wallets: wallets ?? this.wallets,
       nodeMode: nodeMode ?? this.nodeMode,
@@ -411,10 +406,6 @@ class WalletService extends ChangeNotifier {
     await RustLib.init();
     await _storage.delete(key: _kBiometricPassword);
     await migrateOutputCache();
-    final networkStr = await _storage.read(key: _kCurrentNetwork);
-    final network = networkStr == 'mainnet'
-        ? HyphenNetwork.mainnet
-        : HyphenNetwork.testnet;
     final wallets = await _loadWalletList();
     final activeId = await _storage.read(key: _kActiveWalletId);
     final localeStr = await _storage.read(key: _kAppLocale);
@@ -438,14 +429,10 @@ class WalletService extends ChangeNotifier {
     final customRpc = await _storage.read(key: _kCustomRpcEndpoint);
     final poolApiEndpoint = await _storage.read(key: _kPoolApiEndpoint);
     final explorerApiEndpoint = await _storage.read(key: _kExplorerApiEndpoint);
-    final rpcEndpoint =
-        customRpc ??
-        (network == HyphenNetwork.mainnet
-            ? kDefaultMainnetRpcEndpoint
-            : kDefaultRpcEndpoint);
+    final rpcEndpoint = customRpc ?? kDefaultRpcEndpoint;
     _state = WalletState(
       isUnlocked: false,
-      network: network,
+
       wallets: wallets,
       activeWalletId: activeId,
       nodeMode: nodeMode,
@@ -609,10 +596,9 @@ class WalletService extends ChangeNotifier {
     String? name,
   }) async {
     final generation = ++_unlockGeneration;
-    final pqPassphrase = await rust.pqTransformPassword(password: password);
-    final result = await rust.restoreWallet(
+    final result = await rust.restoreWalletWithPassword(
       mnemonic: mnemonic,
-      passphrase: pqPassphrase,
+      password: password,
     );
     final walletName = name ?? 'Wallet ${_state.wallets.length + 1}';
     final walletId = DateTime.now().microsecondsSinceEpoch.toString();
@@ -629,7 +615,6 @@ class WalletService extends ChangeNotifier {
       throw StateError('Wallet selection changed');
     }
     _state = WalletState(
-      network: _state.network,
       nodeMode: _state.nodeMode,
       rpcEndpoint: _state.rpcEndpoint,
       poolApiEndpoint: _state.poolApiEndpoint,
@@ -637,9 +622,7 @@ class WalletService extends ChangeNotifier {
       isUnlocked: true,
       mnemonic: result.mnemonic,
       seedHex: result.seedHex,
-      address: _state.network == HyphenNetwork.mainnet
-          ? result.addressMainnet
-          : result.addressTestnet,
+      address: result.addressTestnet,
       viewPublicHex: result.viewPublicHex,
       spendPublicHex: result.spendPublicHex,
       activeWalletId: walletId,
@@ -665,10 +648,9 @@ class WalletService extends ChangeNotifier {
       encryptedData: encrypted,
       password: password,
     );
-    final pqPassphrase = await rust.pqTransformPassword(password: password);
-    final result = await rust.restoreWallet(
+    final result = await rust.restoreWalletWithPassword(
       mnemonic: mnemonic,
-      passphrase: pqPassphrase,
+      password: password,
     );
     bool current() =>
         generation == _unlockGeneration && activeId == _state.activeWalletId;
@@ -687,9 +669,7 @@ class WalletService extends ChangeNotifier {
       isUnlocked: true,
       mnemonic: result.mnemonic,
       seedHex: result.seedHex,
-      address: _state.network == HyphenNetwork.mainnet
-          ? result.addressMainnet
-          : result.addressTestnet,
+      address: result.addressTestnet,
       viewPublicHex: result.viewPublicHex,
       spendPublicHex: result.spendPublicHex,
     );
@@ -728,7 +708,7 @@ class WalletService extends ChangeNotifier {
     _stopMinedRewardsPolling();
     _state = WalletState(
       isUnlocked: false,
-      network: _state.network,
+
       activeWalletId: _state.activeWalletId,
       wallets: _state.wallets,
       nodeMode: _state.nodeMode,
@@ -744,7 +724,7 @@ class WalletService extends ChangeNotifier {
     _stopMinedRewardsPolling();
     _state = WalletState(
       isUnlocked: false,
-      network: _state.network,
+
       activeWalletId: walletId,
       wallets: _state.wallets,
       nodeMode: _state.nodeMode,
@@ -774,6 +754,8 @@ class WalletService extends ChangeNotifier {
       () => _storage.delete(key: '${_kBiometricPassword}_$walletId'),
     );
     await _outputs.run(() async {
+      await _storage.delete(key: 'transfer_history_$walletId');
+      await _storage.delete(key: 'transfer_history_HYN2_$walletId');
       await _storage.delete(key: '${_kTransferHistory}_$walletId');
       for (final key in (await _storage.readAll()).keys.toList(
         growable: false,
@@ -795,7 +777,7 @@ class WalletService extends ChangeNotifier {
       }
       _state = WalletState(
         isUnlocked: false,
-        network: _state.network,
+
         activeWalletId: newActiveId,
         wallets: wallets,
         nodeMode: _state.nodeMode,
@@ -829,7 +811,7 @@ class WalletService extends ChangeNotifier {
       account: account,
       change: 0,
       index: index,
-      isMainnet: _state.network == HyphenNetwork.mainnet,
+      isMainnet: false,
     );
     return info.address;
   }
@@ -859,19 +841,14 @@ class WalletService extends ChangeNotifier {
 
   /// Get the RPC host and port from the current endpoint.
   (String, int) get _rpcHostPort {
-    final parsed = _parseEndpoint(
-      _state.rpcEndpoint,
-      _state.network == HyphenNetwork.mainnet
-          ? kDefaultMainnetRpcPort
-          : kDefaultRpcPort,
-    );
+    final parsed = _parseEndpoint(_state.rpcEndpoint, kDefaultRpcPort);
     return parsed ?? ('127.0.0.1', kDefaultRpcPort);
   }
 
   String? get _outputKey {
     if (!_state.isUnlocked || _state.activeWalletId == null) return null;
     final (host, port) = _rpcHostPort;
-    final scope = jsonEncode([_state.network.name, host, port]);
+    final scope = jsonEncode([kNeuralNetwork, host, port]);
     return '${_kOwnedOutputs}_${_state.activeWalletId}_${base64Url.encode(utf8.encode(scope))}';
   }
 
@@ -893,7 +870,6 @@ class WalletService extends ChangeNotifier {
     }
 
     final (host, port) = _rpcHostPort;
-    final isMainnet = _state.network == HyphenNetwork.mainnet;
     final session = paymentSession;
     await _outputs.run(() async {
       if (session == null || paymentSession != session) return;
@@ -905,7 +881,7 @@ class WalletService extends ChangeNotifier {
           account: 0,
           startHeight: BigInt.zero,
           endHeight: (BigInt.one << 64) - BigInt.one,
-          isMainnet: isMainnet,
+          isMainnet: false,
           cacheDirectory: (await getTemporaryDirectory()).path,
         );
         if (paymentSession != session) return;
@@ -955,7 +931,7 @@ class WalletService extends ChangeNotifier {
   /// [amountAtomic] is the amount in atomic units (1 HPN = 1e12 atomic).
   /// [feeAtomic] is the transaction fee in atomic units.
   /// The consensus-mandated ring size for the current network.
-  int get networkRingSize => _state.network == HyphenNetwork.mainnet ? 16 : 4;
+  int get networkRingSize => 4;
 
   Future<rust.TransactionSendResult> sendTransaction({
     required String recipientAddress,
@@ -1142,34 +1118,6 @@ class WalletService extends ChangeNotifier {
     _state = _state.copyWith(explorerApiEndpoint: normalized);
     await _refreshMinedRewards();
     notifyListeners();
-  }
-
-  Future<void> switchNetwork(HyphenNetwork network) async {
-    await _storage.write(
-      key: _kCurrentNetwork,
-      value: network == HyphenNetwork.mainnet ? 'mainnet' : 'testnet',
-    );
-    if (_state.isUnlocked && _state.seedHex != null) {
-      final info = await rust.deriveKey(
-        seedHex: _state.seedHex!,
-        account: 0,
-        change: 0,
-        index: 0,
-        isMainnet: network == HyphenNetwork.mainnet,
-      );
-      _state = _state.copyWith(
-        network: network,
-        onChainBalanceAtomic: '0',
-        address: info.address,
-        spendPublicHex: info.spendPublicHex,
-        viewPublicHex: info.viewPublicHex,
-      );
-    } else {
-      _state = _state.copyWith(network: network, onChainBalanceAtomic: '0');
-    }
-    _scannedTip = null;
-    notifyListeners();
-    await refreshAll();
   }
 
   Future<void> refreshMinedRewards() async {

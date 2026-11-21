@@ -2,7 +2,7 @@
 
 [English](README.md) · [钱包使用指南](https://github.com/HyphenTeam/HyphenWallet/wiki/Operations#中文说明)
 
-Hyphen Wallet 是 Hyphen 研究链的 Flutter 钱包。Rust 库在本地派生密钥、扫描属于钱包的输出并签署交易。仓库还包含供共享矿池使用的独立命令行付款代理。钱包和协议尚待独立审计，现阶段请使用开发网测试资金。
+Hyphen Wallet 在神经开发网上扫描隐私付款与挖矿奖励。Rust 签名器会在授权付款前核对创世哈希与共识参数。
 
 ## 在 Windows 上运行
 

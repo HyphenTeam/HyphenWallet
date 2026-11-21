@@ -2,15 +2,21 @@
 
 ## Recovery, scanning and confirmation
 
+New HYN3 recovery phrases start with `hy3-` and end with `-hy3`. Copy both markers. The Rust encoder supports 12, 15, 18, 21 or 24 words. Restore a marked phrase with the original password. The HYN3 derivation uses a BLAKE3 checksum, Argon2id v19 and a 64-byte keyed BLAKE3 XOF. Unmarked historical phrases select the original password transform and PBKDF2 derivation. Confirm the receiving address after recovery. HYN2 balances and signed receipts belong to their original genesis. [Protocol transcripts and migration procedure](https://github.com/HyphenTeam/Hyphen/wiki/HYN3-Identity-and-Recovery)
+
 Record the recovery words in their original order and retain the password used to create the Flutter wallet. Store the two backups separately and offline. The wallet derives its keys from both inputs, so a different password produces a different address. After recovery, compare the receiving address with a copy saved when the wallet was created. Local wallet files use Argon2id for key derivation and XChaCha20-Poly1305 for authenticated encryption.
 
-The restore screen adds a wallet and accepts 12 or 24 English words. It trims the ends of the phrase. The historical derivation reads its internal whitespace and the original password as UTF-8 bytes. Preserve repeated spaces and the original Unicode form. Enter the original password directly. The app applies its historical password transform automatically. The English BIP39 seed vector checks the underlying PBKDF2 step. An executable built from wallet commit `aac6300` and its own lockfile produced the same receiving address as the current wallet for the recovery test fixture.
+The restore screen adds a wallet and trims the ends of the phrase. Historical recovery reads its internal whitespace and the original password as UTF-8 bytes. Preserve repeated spaces and the original Unicode form. An executable built from wallet commit `aac6300` and its own lockfile produced the same receiving address for the historical recovery fixture.
 
-Select the correct network and connect to a trusted node's binary RPC endpoint. The Rust client pins the network magic, genesis hash, consensus parameter hash, block version and work protocol version. It checks block ancestry and transaction roots, reconstructs global output indices, and tracks spent key images from genesis. An output range starting later in the chain still accounts for earlier spends. Public key images can spill to temporary files in the application cache during a large scan.
+To migrate an old encrypted container, unlock it with the original password and record the receiving address. Use Add wallet → Restore with the exact original phrase and password. This writes a separate `HYWLT001` record. Lock and unlock the restored wallet and compare its address with the original before using it. This procedure preserves the original encrypted record and recovery derivation.
+
+To reproduce the Flutter service recovery test, build the Rust library in release mode, set `HYPHEN_WALLET_TEST_LIBRARY` to its absolute path, and run `flutter test test/native_recovery_test.dart`. On Windows the library is `rust/target/release/rust_lib_hyphen_wallet.dll`. The test uses the native cryptographic functions with an in-memory secure-storage fixture. [Native recovery test](../test/native_recovery_test.dart)
+
+Connect to the binary RPC endpoint of a trusted HYN3 node. The wallet defaults to `127.0.0.1:48333`. The Rust client pins the network magic, genesis hash, consensus parameter hash, block version and work protocol version. It checks block ancestry and transaction roots, reconstructs global output indices, and tracks spent key images from genesis. An output range starting later in the chain still accounts for earlier spends. Public key images can spill to temporary files in the application cache during a large scan.
 
 After sending, use the transaction hash to check canonical inclusion and rescan for change. RPC admission places a transaction in the mempool. A restored wallet may take time to rebuild its balance as it reads the chain. A remote node supplies the canonical history used for the scan.
 
-Upgrade the node before upgrading scanning clients. For a rewarded block, binary RPC must return the miner's `block_authorization` in field 6. The scanner verifies the signature and reconstructs the output from the recipient keys and `header.reward`. On `contract-devnet`, `compute-devnet` and `offline-devnet` it also checks that `header.extra_nonce` commits to the two authorized recipient keys. Historical v5 profiles lack that header commitment. For ordinary payments the wallet checks the reported block, position and transaction root. Confirmation depth comes from that node's reported tip.
+Upgrade the node before upgrading scanning clients. For a rewarded block, binary RPC must return the miner's `block_authorization` in field 6. The scanner verifies the signature and reconstructs the output from the recipient keys and `header.reward`. On HYN3 it also checks that `header.extra_nonce` commits to the two authorized recipient keys.  For ordinary payments the wallet checks the reported block, position and transaction root. Confirmation depth comes from that node's reported tip.
 
 While unlocked, the wallet checks the tip hash every five seconds and rescans after a change. Receive shows the latest incoming payment with unspent outputs, its remaining amount and confirmations. A reorganization can remove the receipt and reduce the balance. In the local PPLNS test, the receipt disappeared after height 16 was replaced and returned when the same transaction confirmed at height 22. Sender change is excluded.
 
@@ -24,11 +30,11 @@ The home balance comes from a successful output scan for the active wallet and R
 
 首页余额取自当前钱包在所选节点上的成功扫描，显示完整十二位小数。发现链顶变化或同步失败时，钱包暂时隐藏余额和上次入款，重扫成功后恢复。累计挖矿奖励和矿池待付款在奖励栏单列。双离线订单请保留自己签发的请求，待自己的节点同步并停止后，用上面的 `confirm` 命令核对该笔兑付。
 
-收款页和活动页都从成功的链扫描读取最近一笔仍有未花输出的入款。本地历史中的方向、金额及交易号不能证明入账。对具体订单，可让自有 HYOF 节点保持运行，用 `hyphen-offline confirm-online --rpc 127.0.0.1:48333 PACKET INVOICE OWN_ADDRESS NET --min-confirmations N` 核对。加上 `--save-settlement observed.tx` 可留存签名原文，用于复核竞争兑付。
+收款页和活动页都从成功的链扫描读取最近一笔仍有未花输出的入款。本地历史中的方向、金额及交易号不能证明入账。对具体订单，可让自有 HYN3 节点保持运行，用 `hyphen-offline confirm-online --rpc 127.0.0.1:48333 PACKET INVOICE OWN_ADDRESS NET --min-confirmations N` 核对。加上 `--save-settlement observed.tx` 可留存签名原文，用于复核竞争兑付。
 
-Receive and Activity show the latest incoming transfer with unspent outputs from the active scan. Local history supplies outgoing submissions. For order-specific verification, `confirm-online` checks the retained invoice against your own running HYOF node. The optional evidence file preserves the observed transaction across reorganizations.
+Receive and Activity show the latest incoming transfer with unspent outputs from the active scan. Local history supplies outgoing submissions. For order-specific verification, `confirm-online` checks the retained invoice against your own running HYN3 node. The optional evidence file preserves the observed transaction across reorganizations.
 
-For whole-reserve payments on `offline-devnet`, `hyphen-reserve-wallet prepare` saves the signed funding transaction. `submit` relays the saved transaction, and `balance` scans the canonical chain for wallet outputs. The node repository’s `hyphen-offline` signer verifies a local checkpoint and the recipient’s request before recording a conditional receipt. Back up the latest signed delivery together with the funding terms. The Flutter NFC screen exchanges receiving addresses. [Offline payment commands and recovery](https://github.com/HyphenTeam/Hyphen/wiki/Offline-Payments)
+For whole-reserve payments on `neural-devnet`, `hyphen-reserve-wallet prepare` saves the signed funding transaction. `submit` relays the saved transaction, and `balance` scans the canonical chain for wallet outputs. The node repository’s `hyphen-offline` signer verifies a local checkpoint and the recipient’s request before recording a conditional receipt. Back up the latest signed delivery together with the funding terms. The Flutter NFC screen exchanges receiving addresses. [Offline payment commands and recovery](https://github.com/HyphenTeam/Hyphen/wiki/Offline-Payments)
 
 ## Single-output disclosure
 
@@ -44,20 +50,22 @@ The recipient verifies against their own node's current branch and clock. The JS
 
 ## Shared pool payout agent
 
+The HYN3 pool uses direct SOLO coinbase rewards. The agent below is maintained for independent payout integration.
+
 Build the signer and start it on the same host as the pool. Provide a dedicated 64-byte seed (raw bytes or 128 hex digits) and a 32–256 character bearer token. Use a fee accepted by the node's relay policy. The example uses devnet atomic units.
 
 ```sh
 cargo build --release --locked --manifest-path rust/Cargo.toml --bin hyphen-payout-agent
-./rust/target/release/hyphen-payout-agent --network devnet --bind 127.0.0.1:38401 --node-host 127.0.0.1 --node-port 48333 --seed-file pool.seed --token-file payout.token --state-dir payout_agent_state --fee 1000000
+./rust/target/release/hyphen-payout-agent --network neural-devnet --bind 127.0.0.1:38401 --node-host 127.0.0.1 --node-port 48333 --seed-file pool.seed --token-file payout.token --state-dir payout_agent_state/neural-v3 --fee 1000000
 ```
 
-The agent exposes authenticated `/v1/health`, `/v1/submit` and `/v1/status` routes on loopback. The pool assigns an ID to each payout intent and reserves the corresponding amount. The agent saves the signed transaction before broadcasting it, reuses it on retry and processes unconfirmed payouts in sequence. Preserve the seed, token and agent state across restarts. [Pool settlement](https://github.com/HyphenTeam/HyphenPool/wiki/Operations#run-shared-payouts)
+The agent exposes authenticated `/v1/health`, `/v1/submit` and `/v1/status` routes on loopback. It saves the signed transaction before broadcasting it, reuses it on retry and processes unconfirmed payouts in sequence. Preserve the seed, token and agent state across restarts. [SOLO pool settlement](https://github.com/HyphenTeam/HyphenPool/wiki/Operations#solo-settlement)
 
 One agent holds the state-directory lock for its lifetime. It replaces the saved state atomically from a temporary file in the same directory. If the old main file is absent at upgrade, the agent can recover the previous `.bak`. A corrupt main file produces a startup error. Stop the agent before copying its state for backup.
 
 ## Builds and compatibility
 
-The HYOF receipt candidate uses wallet commit `ba84c48231e57243ce5b583e4fe2a392163eaa34` and shared consensus commit `f78878eb53e2966ac10aaf51a272e57cf1e757b9`. The Windows desktop distribution requires the executable, its DLLs and the `data` directory together. Its native bridge verified the canonical payout and scan anchor against the recipient's running local node. The Android ARM64 APK passed APK Signature Scheme v2 verification with the local Android Debug certificate. Both applications contain the four font files from the frozen source. Physical-device NFC, secure storage and hardware signing still need acceptance testing.
+The historical HYOF receipt candidate uses wallet commit `ba84c48231e57243ce5b583e4fe2a392163eaa34` and shared consensus commit `f78878eb53e2966ac10aaf51a272e57cf1e757b9`. The Windows desktop distribution requires the executable, its DLLs and the `data` directory together. Its native bridge verified the canonical payout and scan anchor against the recipient's running local node. The Android ARM64 APK passed APK Signature Scheme v2 verification with the local Android Debug certificate. Both applications contain the four font files from the frozen source. Physical-device NFC, secure storage and hardware signing still need acceptance testing.
 
 | Receipt candidate / 收款核验候选 | SHA-256 |
 | --- | --- |
@@ -85,7 +93,7 @@ Google Sans includes the authors' license. The wallet bundles three static Harmo
 
 ## 中文说明
 
-在 `offline-devnet` 上，使用 `hyphen-reserve-wallet prepare` 保存已签名的预锁交易，再用 `submit` 提交。`balance` 扫描规范链并计算钱包余额。收款人使用 `hyphen-offline`，依据自己的检查点和签名请求核验收到的凭证。请将最新的签名凭证与原始预锁条款一并备份。Flutter 的 NFC 收款功能用于交换收款地址。[离线付款与恢复](https://github.com/HyphenTeam/Hyphen/wiki/Offline-Payments)
+在 `neural-devnet` 上，使用 `hyphen-reserve-wallet prepare` 保存已签名的预锁交易，再用 `submit` 提交。`balance` 扫描规范链并计算钱包余额。收款人使用 `hyphen-offline`，依据自己的检查点和签名请求核验收到的凭证。请将最新的签名凭证与原始预锁条款一并备份。Flutter 的 NFC 收款功能用于交换收款地址。[离线付款与恢复](https://github.com/HyphenTeam/Hyphen/wiki/Offline-Payments)
 
 钱包中的三款 HarmonyOS Sans SC 静态字重标记为 2.400 版。华为旧版下载包含 1.0 版静态字体，当前下载包含单个 SC 字体，两者均与钱包清单的三个哈希不同。发布仍需核对这三份原文件的来源、适用授权及软件内的声明要求。[字体清单](../assets/fonts/manifest.json) · [华为设计资源](https://developer.huawei.com/consumer/cn/design/resource)
 
@@ -93,11 +101,11 @@ Google Sans includes the authors' license. The wallet bundles three static Harmo
 
 请分别离线备份按顺序排列的助记词和创建 Flutter 钱包时使用的原密码。两者共同派生密钥。输入其他密码会得到不同的地址，恢复后请与以前保存的收款地址核对。本地钱包文件使用 Argon2id 和 XChaCha20-Poly1305 认证加密。
 
-恢复入口会新增一个钱包，接受 12 或 24 个英文词。界面会去掉助记词首尾空白，内部空白以及原密码的 Unicode 字节形式都影响地址。直接输入原密码，应用会自动执行历史密码变换。使用旧版 `aac6300` 源码及其锁文件独立构建的程序，已与本版本核对同一组公开测试词和密码的收款地址。
+恢复入口会新增一个钱包，支持 12、15、18、21 或 24 个词。HYN3 须保留首词的 `hy3-`、末词的 `-hy3` 及原始密码。未标记的历史助记词使用旧版密码变换，内部空白和密码的 Unicode 字节形式均影响地址。历史恢复测试另以旧版 `aac6300` 核对同一组公开测试词与密码对应的收款地址。
 
-选择正确的网络，连接可信节点的二进制 RPC。钱包核对网络标识、创世哈希、共识参数哈希和协议版本，从创世块开始验证祖先与交易根，重建全局输出索引并核对已花费输入。指定较晚的输出起始高度时，仍会检查之前发生的花费。大型扫描可把公开的 key image 临时写入应用缓存目录。发送后按交易哈希查链上确认，再重扫找零。
+连接可信 HYN3 节点的二进制 RPC，默认端点为 `127.0.0.1:48333`。钱包核对网络标识、创世哈希、共识参数哈希和协议版本，从创世块开始验证祖先与交易根，重建全局输出索引并核对已花费输入。指定较晚的输出起始高度时，仍会检查之前发生的花费。大型扫描可把公开的 key image 临时写入应用缓存目录。发送后按交易哈希查链上确认，再重扫找零。
 
-先升级节点，再升级钱包。扫描奖励时，钱包验证矿工授权并重算收款输出。合约、计算和双离线开发网还核对块头 `extra_nonce` 中的两把奖励收款公钥承诺。历史网络沿用各自的 v5 规则。普通付款会核对块内位置与交易根，确认深度依赖所连节点的链顶。解锁后每五秒检查链顶哈希，变化时重扫。收款页显示最近一笔仍有未花输出的普通收款及其剩余金额和确认数，排除找零。分叉时收款可能撤销，同一交易重新确认后恢复。升级会清理旧输出缓存和全局生物识别凭据，启用生物识别后用原密码解锁可建立该钱包专属凭据。
+先升级节点，再升级钱包。扫描奖励时，钱包验证矿工授权、重算收款输出，并核对块头 `extra_nonce` 中的奖励收款公钥承诺。普通付款会核对块内位置与交易根，确认深度依赖所连节点的链顶。解锁后每五秒检查链顶哈希，变化时重扫。收款页显示最近一笔仍有未花输出的普通收款及其剩余金额和确认数，排除找零。分叉时收款可能撤销，同一交易重新确认后恢复。输出缓存和转账历史按 HYN3 身份隔离。
 
 发送金额最多保留 12 位小数，确认和签名使用同一笔整数金额。实验性 WOTS 消息签名入口已停用，校验和修正后，部分旧消息签名可能无法通过验证。日常付款采用 CLSAG，历史密码变换只使用 WOTS 公钥。
 

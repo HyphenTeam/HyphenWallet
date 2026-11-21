@@ -4,12 +4,8 @@ pub const BLOCK_VERSION: u32 = 5;
 /// PoUW protocol version. Must equal `hyphen_pow::POUW_PROTOCOL_VERSION`.
 pub const POUW_PROTOCOL_VERSION: u32 = 3;
 
-/// Canonical anchor of the pinned identities: `test-vectors/chain-identity-v6.json`.
-///
-/// The genesis hashes are the identity-v6 values: they moved when the chain
-/// switched from the fixed-width profile to RustBinary's schema-guided compact
-/// profile, because a genesis hash is the hash of the encoded genesis block.
-pub const IDENTITY_VECTOR: &str = "chain-identity-v6";
+/// Published genesis and parameters for the active network.
+pub const IDENTITY_VECTOR: &str = "chain-identity-neural-v3";
 
 pub struct ChainIdentity {
     pub network: &'static str,
@@ -18,50 +14,12 @@ pub struct ChainIdentity {
     pub genesis_hash: &'static str,
 }
 
-pub const CHAIN_IDENTITIES: [ChainIdentity; 7] = [
-    ChainIdentity {
-        network: "hyphen-devnet-v2",
-        network_magic: *b"HYDV",
-        consensus_params_hash: "521f6cdc47f4424c1ea7b9f4d6770cf114f620cdff62958060f8c6953cb69de8",
-        genesis_hash: "5f7c144f0ef27880259b2429e46ef175685da679916fcc6b80c45f457465e32d",
-    },
-    ChainIdentity {
-        network: "hyphen-neural-devnet-v1",
-        network_magic: *b"HYNN",
-        consensus_params_hash: "451ca637dafb07604b8dcabebc86c54d72efe590ac5912bb2a2f35ea6d41b6a9",
-        genesis_hash: "6d3c028ecd7380ba143a62c8b82fa706155da56fb42ec8cf8b30ec4dc989d058",
-    },
-    ChainIdentity {
-        network: "hyphen-contract-devnet-v1",
-        network_magic: *b"HYCD",
-        consensus_params_hash: "3ad32be8f0c772331740a74ebcd56266ad97da58bdda076e9e139d31499910b2",
-        genesis_hash: "422475c11a829f198cc502ca4f5cd4489336569997c3cdf048dddaf1d71f1b33",
-    },
-    ChainIdentity {
-        network: "hyphen-offline-devnet-v1",
-        network_magic: *b"HYOF",
-        consensus_params_hash: "abcc133c433575b338b6a38f3522cd2602f2b08c28f970c7c4fbd08280e28bae",
-        genesis_hash: "2c80d0881102a4e2d4a080bca8b08d2726b303f5877a8c585eb315eae49f9aa5",
-    },
-    ChainIdentity {
-        network: "hyphen-compute-devnet-v1",
-        network_magic: *b"HYAC",
-        consensus_params_hash: "8cb229414e48614e7c1e5c47bb819de2974af9735747e0f2d7728b91ededa2e9",
-        genesis_hash: "381fa56cec297fad0d25563a8c0a14fa1fd226b143f3d1ec198b897aeac339bb",
-    },
-    ChainIdentity {
-        network: "hyphen-testnet",
-        network_magic: *b"HYTS",
-        consensus_params_hash: "dacfd24354a308d149ee8676444d92bc9e48a54b5c6f191272b40b16653dffa9",
-        genesis_hash: "944514b7c52d93ce03f0bfac1d436cf1607fab1b78d73010ff59301f913dba42",
-    },
-    ChainIdentity {
-        network: "hyphen-mainnet",
-        network_magic: *b"HYPN",
-        consensus_params_hash: "d42031b0c51640621ce6c6cb7bc97847db53bd636842c5b2b4f07c2be6a4e15b",
-        genesis_hash: "5896c90005ca4e85e19876dac81867920dfa4315744d757ecbf13c16c24669e6",
-    },
-];
+pub const CHAIN_IDENTITIES: [ChainIdentity; 1] = [ChainIdentity {
+    network: "hyphen-neural-devnet-v3",
+    network_magic: *b"HYN3",
+    consensus_params_hash: "4f3b68f56eb14d9d022d2f6b970811b3d8d53f5a3f6db07f70763cd7e5c17d49",
+    genesis_hash: "710ad7eb105d56901495cf9c31f07f749cb812ddf3848f978e2bd133b7ebc926",
+}];
 
 pub fn verify(
     network: &str,

@@ -30,7 +30,8 @@ fn reply(stream: &mut std::net::TcpStream, method: u32, payload: Vec<u8>, wrong_
 #[test]
 fn an_interrupted_scan_or_mismatched_response_fails_the_whole_scan() {
     let identity = &CHAIN_IDENTITIES[0];
-    let genesis = hyphen_core::genesis::build_genesis_block(&hyphen_core::ChainConfig::devnet());
+    let genesis =
+        hyphen_core::genesis::build_genesis_block(&hyphen_core::ChainConfig::neural_devnet());
     let genesis_response = BlockResponse {
         header_data: hyphen_wire::wire_config(4096)
             .serialize(&genesis.header)
@@ -97,14 +98,15 @@ fn an_interrupted_scan_or_mismatched_response_fails_the_whole_scan() {
 #[test]
 fn scans_reject_the_wrong_reserve_network_and_a_replaced_anchor() {
     use rust_lib_hyphen_wallet::transfer::scan_reserve_wallet;
-    let identity = CHAIN_IDENTITIES
-        .iter()
-        .find(|i| i.network_magic == *b"HYDV")
-        .unwrap();
+    let identity = &CHAIN_IDENTITIES[0];
     for reserve_scan in [true, false] {
         let info = ChainInfoResponse {
             network: identity.network.into(),
-            network_magic: identity.network_magic.to_vec(),
+            network_magic: if reserve_scan {
+                b"HYOF".to_vec()
+            } else {
+                identity.network_magic.to_vec()
+            },
             genesis_hash: hex::decode(identity.genesis_hash).unwrap(),
             tip_hash: hex::decode(identity.genesis_hash).unwrap(),
             consensus_params_hash: hex::decode(identity.consensus_params_hash).unwrap(),
@@ -122,6 +124,9 @@ fn scans_reject_the_wrong_reserve_network_and_a_replaced_anchor() {
                 info.encode_to_vec(),
                 false,
             );
+            if reserve_scan {
+                return;
+            }
             reply(
                 &mut stream,
                 METHOD_GET_CHAIN_INFO,
@@ -129,7 +134,8 @@ fn scans_reject_the_wrong_reserve_network_and_a_replaced_anchor() {
                 false,
             );
             if !reserve_scan {
-                let genesis = hyphen_core::build_genesis_block(&hyphen_core::ChainConfig::devnet());
+                let genesis =
+                    hyphen_core::build_genesis_block(&hyphen_core::ChainConfig::neural_devnet());
                 let mut block = BlockResponse {
                     header_data: hyphen_wire::wire_config(4096)
                         .serialize(&genesis.header)
@@ -163,7 +169,7 @@ fn scans_reject_the_wrong_reserve_network_and_a_replaced_anchor() {
         let error = result.err().unwrap();
         server.join().unwrap();
         let expected = if reserve_scan {
-            "differs from the expected chain"
+            "does not match the pinned"
         } else {
             "chain changed during wallet scan"
         };

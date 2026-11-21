@@ -1,25 +1,27 @@
-// BIP39 Mnemonic Generation and Seed Derivation
-//
-// Implements the BIP-0039 standard for mnemonic code generation:
-//   1. Generate N bytes of entropy (16 for 12 words, 32 for 24 words)
-//   2. SHA-256 hash the entropy, take first N/32 bits as checksum
-//   3. Concatenate entropy + checksum, split into 11-bit groups
-//   4. Map each group to a word from the standardized English word list
-//
-// Seed derivation: PBKDF2-HMAC-SHA512(mnemonic, "mnemonic" + passphrase, 2048)
+//! HYN3 recovery words and the historical BIP39 decoder.
 
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 /// BIP39 English word list.
 const WORDLIST: &str = include_str!("bip39_english.txt");
+pub const PREFIX: &str = "hy3-";
+const SUFFIX: &str = "-hy3";
+
+fn checksum(entropy: &[u8], versioned: bool) -> u8 {
+    if versioned {
+        blake3::derive_key("Hyphen recovery checksum v3", entropy)[0]
+    } else {
+        Sha256::digest(entropy)[0]
+    }
+}
 
 /// Parse the embedded word list into a slice.
 fn word_list() -> Vec<&'static str> {
     WORDLIST.lines().filter(|l| !l.is_empty()).collect()
 }
 
-/// Generate a BIP39 mnemonic phrase.
+/// Generate HYN3 recovery words with both version markers.
 ///
 /// `word_count` must be 12, 15, 18, 21, or 24.
 pub fn generate_mnemonic(word_count: usize) -> Result<String, String> {
@@ -36,11 +38,11 @@ pub fn generate_mnemonic(word_count: usize) -> Result<String, String> {
     let mut entropy = Zeroizing::new(vec![0u8; entropy_bytes]);
     getrandom::fill(&mut entropy)
         .map_err(|error| format!("system entropy unavailable: {error}"))?;
-    entropy_to_mnemonic(&entropy)
+    encode_words(&entropy, true)
 }
 
-/// Convert raw entropy bytes to a BIP39 mnemonic phrase.
-pub fn entropy_to_mnemonic(entropy: &[u8]) -> Result<String, String> {
+/// Append checksum bits and encode eleven bits per dictionary word.
+fn encode_words(entropy: &[u8], versioned: bool) -> Result<String, String> {
     let ent_bits = entropy.len() * 8;
     if ![128, 160, 192, 224, 256].contains(&ent_bits) {
         return Err("entropy must be 16, 20, 24, 28, or 32 bytes".into());
@@ -54,8 +56,7 @@ pub fn entropy_to_mnemonic(entropy: &[u8]) -> Result<String, String> {
         ));
     }
 
-    // SHA-256 checksum
-    let hash = Sha256::digest(entropy);
+    let check = checksum(entropy, versioned);
     let cs_bits = ent_bits / 32;
 
     // Build combined bit string: entropy || checksum
@@ -67,10 +68,8 @@ pub fn entropy_to_mnemonic(entropy: &[u8]) -> Result<String, String> {
             bits.push((byte >> bit) & 1);
         }
     }
-    for bit in (0..cs_bits).rev() {
-        let byte_idx = (cs_bits - 1 - bit) / 8;
-        let bit_idx = 7 - ((cs_bits - 1 - bit) % 8);
-        bits.push((hash[byte_idx] >> bit_idx) & 1);
+    for bit in 0..cs_bits {
+        bits.push((check >> (7 - bit)) & 1);
     }
 
     // Split into 11-bit groups
@@ -88,13 +87,35 @@ pub fn entropy_to_mnemonic(entropy: &[u8]) -> Result<String, String> {
         phrase.push(words[index as usize]);
     }
 
-    Ok(phrase.join(" "))
+    let mut phrase = phrase.join(" ");
+    if versioned {
+        phrase.insert_str(0, PREFIX);
+        phrase.push_str(SUFFIX);
+    }
+    Ok(phrase)
 }
 
-/// Validate a BIP39 mnemonic phrase.
+/// Validate the checksum and framing of the selected recovery format.
 pub fn validate_mnemonic(phrase: &str) -> bool {
+    let versioned = phrase.starts_with(PREFIX);
+    let phrase = if let Some(words) = phrase.strip_prefix(PREFIX) {
+        let Some(words) = words.strip_suffix(SUFFIX) else {
+            return false;
+        };
+        words
+    } else {
+        phrase
+    };
     let words = word_list();
     let mnemonic_words: Vec<&str> = phrase.split_whitespace().collect();
+    if versioned
+        && (phrase.starts_with(' ')
+            || phrase.ends_with(' ')
+            || phrase.contains("  ")
+            || !phrase.bytes().all(|c| c.is_ascii_lowercase() || c == b' '))
+    {
+        return false;
+    }
 
     let word_count = mnemonic_words.len();
     if ![12, 15, 18, 21, 24].contains(&word_count) {
@@ -129,11 +150,11 @@ pub fn validate_mnemonic(phrase: &str) -> bool {
     }
 
     // Compute checksum
-    let hash = Sha256::digest(entropy.as_slice());
+    let check = checksum(&entropy, versioned);
 
     // Verify checksum bits
     for i in 0..cs_bits {
-        let expected = (hash[i / 8] >> (7 - (i % 8))) & 1;
+        let expected = (check >> (7 - i)) & 1;
         if bits[ent_bits + i] != expected {
             return false;
         }
@@ -188,7 +209,7 @@ mod tests {
     #[test]
     fn bip39_english_reference_vector() {
         let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-        assert_eq!(entropy_to_mnemonic(&[0; 16]).unwrap(), phrase);
+        assert_eq!(encode_words(&[0; 16], false).unwrap(), phrase);
         assert!(validate_mnemonic(phrase));
         assert_eq!(
             hex::encode(mnemonic_to_seed(phrase, "TREZOR")),
@@ -216,10 +237,19 @@ mod tests {
     }
 
     #[test]
-    fn different_passphrase_different_seed() {
-        let m = generate_mnemonic(12).unwrap();
-        let s1 = mnemonic_to_seed(&m, "");
-        let s2 = mnemonic_to_seed(&m, "password");
-        assert_ne!(s1, s2);
+    fn version_markers_are_required_as_a_pair() {
+        let phrase = encode_words(&[0; 16], true).unwrap();
+        assert_eq!(
+            phrase,
+            "hy3-abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon able-hy3"
+        );
+        for invalid in [
+            phrase.trim_start_matches(PREFIX),
+            phrase.trim_end_matches(SUFFIX),
+            &phrase.replacen(' ', "  ", 1),
+            &phrase.replace("able-hy3", "about-hy3"),
+        ] {
+            assert!(!validate_mnemonic(invalid));
+        }
     }
 }

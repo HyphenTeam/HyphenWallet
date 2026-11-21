@@ -177,7 +177,7 @@ class _HomeTab extends StatelessWidget {
               ],
             ),
             actions: [
-              _NetworkChip(state: state, wallet: wallet, l10n: l10n),
+              const Chip(label: Text('HYN3')),
               const SizedBox(width: 4),
               IconButton(
                 icon: const Icon(Icons.account_circle_outlined, size: 26),
@@ -227,49 +227,6 @@ class _HomeTab extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _NetworkChip extends StatelessWidget {
-  final WalletState state;
-  final WalletService wallet;
-  final AppLocalizations l10n;
-
-  const _NetworkChip({
-    required this.state,
-    required this.wallet,
-    required this.l10n,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isMainnet = state.network == HyphenNetwork.mainnet;
-    return ActionChip(
-      label: Text(
-        isMainnet ? l10n.mainnet : l10n.testnet,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: isMainnet ? HyphenColors.forestGreen : cs.tertiary,
-        ),
-      ),
-      avatar: Icon(
-        isMainnet ? Icons.circle : Icons.circle_outlined,
-        size: 8,
-        color: isMainnet ? Colors.green : Colors.orange,
-      ),
-      onPressed: () {
-        final next = isMainnet ? HyphenNetwork.testnet : HyphenNetwork.mainnet;
-        wallet.switchNetwork(next);
-      },
-      backgroundColor: isMainnet
-          ? HyphenColors.brightGreen.withAlpha(30)
-          : Colors.orange.withAlpha(25),
-      side: BorderSide.none,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      visualDensity: VisualDensity.compact,
     );
   }
 }
@@ -401,9 +358,7 @@ class _BalanceHero extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            state.network == HyphenNetwork.mainnet
-                ? l10n.mainnet
-                : l10n.testnet,
+            kNeuralNetwork,
             style: TextStyle(
               color: Colors.white.withAlpha(120),
               fontSize: 12,

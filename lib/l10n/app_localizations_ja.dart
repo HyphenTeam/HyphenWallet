@@ -134,13 +134,14 @@ class AppLocalizationsJa extends AppLocalizations {
   String get restoreWallet => 'ウォレットを復元';
 
   @override
-  String get enterRecoveryPhrase => '12語または24語を順番にスペースで区切って入力してください。';
+  String get enterRecoveryPhrase =>
+      '単語を順番に入力してください。HYN3 では最初の単語の hy3- と最後の単語の -hy3 も含めてください。';
 
   @override
   String get mnemonicHint => '単語1 単語2 単語3 ...';
 
   @override
-  String get pleaseEnter12Or24Words => '12語または24語を入力してください';
+  String get pleaseEnter12Or24Words => '12、15、18、21、24 語のいずれかを入力してください';
 
   @override
   String get continueButton => '続行';

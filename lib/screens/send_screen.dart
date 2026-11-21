@@ -466,13 +466,7 @@ class _SendScreenState extends State<SendScreen> {
                     const SizedBox(height: 12),
                     _infoRow(l10n.privacyLevel, l10n.ringSignatureClsag),
                     const SizedBox(height: 12),
-                    _infoRow(
-                      l10n.network,
-                      context.watch<WalletService>().state.network ==
-                              HyphenNetwork.mainnet
-                          ? l10n.mainnet
-                          : l10n.testnet,
-                    ),
+                    _infoRow(l10n.network, kNeuralNetwork),
                   ],
                 ),
               ),

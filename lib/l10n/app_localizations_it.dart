@@ -137,13 +137,13 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get enterRecoveryPhrase =>
-      'Inserisci le 12 o 24 parole in ordine, separate da spazi.';
+      'Inserisci le parole in ordine. Per HYN3, conserva hy3- all’inizio della prima parola e -hy3 alla fine dell’ultima.';
 
   @override
   String get mnemonicHint => 'parola1 parola2 parola3 ...';
 
   @override
-  String get pleaseEnter12Or24Words => 'Inserisci 12 o 24 parole';
+  String get pleaseEnter12Or24Words => 'Inserisci 12, 15, 18, 21 o 24 parole';
 
   @override
   String get continueButton => 'Continua';

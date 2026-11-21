@@ -38,6 +38,8 @@ void main() {
         'owned_outputs_v2_12_b': '[]',
         'owned_outputs_v2_123_a': 'retained',
         'transfer_history_12': '[]',
+        'transfer_history_HYN2_12': '[]',
+        'transfer_history_HYN2_123': 'retained',
       });
       final wallet = WalletService();
       addTearDown(wallet.dispose);
@@ -46,6 +48,7 @@ void main() {
         'biometric_password_123': 'retained',
         'owned_outputs_v2_123_a': 'retained',
         'wallet_list': '[]',
+        'transfer_history_HYN2_123': 'retained',
       });
       await wallet.setBiometricEnabled(false);
       expect(await storage.read(key: 'biometric_password_123'), isNull);

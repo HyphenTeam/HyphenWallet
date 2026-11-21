@@ -137,13 +137,14 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get enterRecoveryPhrase =>
-      'Geben Sie Ihre 12 oder 24 Wörter in der richtigen Reihenfolge mit Leerzeichen ein.';
+      'Geben Sie die Wörter der Reihe nach ein. Bei HYN3 gehört hy3- zum ersten Wort und -hy3 zum letzten.';
 
   @override
   String get mnemonicHint => 'Wort1 Wort2 Wort3 ...';
 
   @override
-  String get pleaseEnter12Or24Words => 'Bitte geben Sie 12 oder 24 Wörter ein';
+  String get pleaseEnter12Or24Words =>
+      'Geben Sie 12, 15, 18, 21 oder 24 Wörter ein';
 
   @override
   String get continueButton => 'Weiter';

@@ -3,7 +3,7 @@
 HyphenWallet derives receiving addresses from a recovery phrase and password. It connects to a Hyphen node to scan the chain, identify spendable outputs and check payment confirmations.
 
 - [Recovery, scanning and confirmation](Operations.md#recovery-scanning-and-confirmation) explains how to restore the original address and verify a payment against the chain.
-- [Conditional offline payments](Operations.md#conditional-offline-payments) covers reserve funding, offline receipts and settlement on `offline-devnet`.
+- [Conditional offline payments](Operations.md#conditional-offline-payments) covers reserve funding, offline receipts and settlement on `neural-devnet`.
 - [Single-output disclosure](Operations.md#single-output-disclosure) describes the ownership and amount proofs available for an individual output.
 - [Shared pool payout agent](Operations.md#shared-pool-payout-agent) and [builds and compatibility](Operations.md#builds-and-compatibility) cover service configuration and supported builds.
 

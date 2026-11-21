@@ -16,20 +16,15 @@ class _ScanApi extends Fake implements RustLibApi {
   bool detached = false;
 
   @override
-  Future<String> crateApiWalletPqTransformPassword({
-    required String password,
-  }) async => password;
-
-  @override
   Future<Uint8List> crateApiWalletEncryptWallet({
     required String mnemonic,
     required String password,
   }) async => Uint8List(1);
 
   @override
-  Future<WalletCreateResult> crateApiWalletRestoreWallet({
+  Future<WalletCreateResult> crateApiWalletRestoreWalletWithPassword({
     required String mnemonic,
-    required String passphrase,
+    required String password,
   }) async => WalletCreateResult(
     mnemonic: mnemonic,
     seedHex: '01',
@@ -116,6 +111,14 @@ void main() {
       final id = wallet.state.activeWalletId!;
       await storage.write(
         key: 'transfer_history_$id',
+        value: jsonEncode([
+          {'direction': 'sent', 'recipientAddress': 'old-chain-transfer'},
+        ]),
+      );
+      await wallet.loadTransferHistory();
+      expect(wallet.state.transferActivities, isEmpty);
+      await storage.write(
+        key: 'transfer_history_HYN3_$id',
         value: jsonEncode([
           {'direction': 'received', 'recipientAddress': 'forged-incoming'},
           {'direction': 'unknown', 'recipientAddress': 'unknown-direction'},

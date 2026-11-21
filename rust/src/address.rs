@@ -67,6 +67,9 @@ impl HyphenAddress {
         let body = s
             .strip_prefix(PREFIX)
             .ok_or_else(|| "missing hy1 prefix".to_string())?;
+        if body.len() > 95 {
+            return Err("invalid address length".into());
+        }
         let payload = bs58::decode(body)
             .into_vec()
             .map_err(|e| format!("base58 decode failed: {e}"))?;
@@ -88,15 +91,12 @@ impl HyphenAddress {
         if payload[65..69] != expected_cs {
             return Err("checksum mismatch".into());
         }
-        for key in [view, spend] {
-            if key == [0; 32]
-                || curve25519_dalek::ristretto::CompressedRistretto(key)
-                    .decompress()
-                    .is_none()
-            {
-                return Err("invalid recipient public key".into());
-            }
+        hyphen_crypto::stealth::StealthAddress {
+            view_public: view,
+            spend_public: spend,
         }
+        .recipient_points()
+        .map_err(|_| "invalid recipient public key".to_string())?;
         Ok(Self {
             version,
             view_public: view,
