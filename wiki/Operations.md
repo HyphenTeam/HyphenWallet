@@ -12,7 +12,7 @@ To migrate an old encrypted container, unlock it with the original password and 
 
 To reproduce the Flutter service recovery test, build the Rust library in release mode, set `HYPHEN_WALLET_TEST_LIBRARY` to its absolute path, and run `flutter test test/native_recovery_test.dart`. On Windows the library is `rust/target/release/rust_lib_hyphen_wallet.dll`. The test uses the native cryptographic functions with an in-memory secure-storage fixture. [Native recovery test](../test/native_recovery_test.dart)
 
-Connect to the binary RPC endpoint of a trusted HYN3 node. The wallet defaults to `127.0.0.1:48333`. The Rust client pins the network magic, genesis hash, consensus parameter hash, block version and work protocol version. It checks block ancestry and transaction roots, reconstructs global output indices, and tracks spent key images from genesis. An output range starting later in the chain still accounts for earlier spends. Public key images can spill to temporary files in the application cache during a large scan.
+The default HYN3 binary RPC endpoint is `bytesnap.tech:48333`. For this node the wallet uses `https://bytesnap.tech` for pool queries and `https://explorer.bytesnap.tech` for explorer queries. The connection indicator shows the height returned by the node after the Rust client verifies the network magic, genesis hash, consensus parameter hash, block version and work protocol version. It checks block ancestry and transaction roots, reconstructs global output indices, and tracks spent key images from genesis. An output range starting later in the chain still accounts for earlier spends. Public key images can spill to temporary files in the application cache during a large scan.
 
 After sending, use the transaction hash to check canonical inclusion and rescan for change. RPC admission places a transaction in the mempool. A restored wallet may take time to rebuild its balance as it reads the chain. A remote node supplies the canonical history used for the scan.
 
@@ -103,7 +103,7 @@ Google Sans includes the authors' license. The wallet bundles three static Harmo
 
 恢复入口会新增一个钱包，支持 12、15、18、21 或 24 个词。HYN3 须保留首词的 `hy3-`、末词的 `-hy3` 及原始密码。未标记的历史助记词使用旧版密码变换，内部空白和密码的 Unicode 字节形式均影响地址。历史恢复测试另以旧版 `aac6300` 核对同一组公开测试词与密码对应的收款地址。
 
-连接可信 HYN3 节点的二进制 RPC，默认端点为 `127.0.0.1:48333`。钱包核对网络标识、创世哈希、共识参数哈希和协议版本，从创世块开始验证祖先与交易根，重建全局输出索引并核对已花费输入。指定较晚的输出起始高度时，仍会检查之前发生的花费。大型扫描可把公开的 key image 临时写入应用缓存目录。发送后按交易哈希查链上确认，再重扫找零。
+HYN3 钱包默认连接二进制 RPC `bytesnap.tech:48333`，查询矿池时使用 `https://bytesnap.tech`，查询浏览器时使用 `https://explorer.bytesnap.tech`。钱包核对网络标识、创世哈希、共识参数哈希和协议版本后，在「节点连接」显示节点返回的链高。钱包从创世块开始验证祖先与交易根，重建全局输出索引并核对已花费输入。指定较晚的输出起始高度时，仍会检查之前发生的花费。大型扫描可把公开的 key image 临时写入应用缓存目录。发送后按交易哈希查链上确认，再重扫找零。
 
 先升级节点，再升级钱包。扫描奖励时，钱包验证矿工授权、重算收款输出，并核对块头 `extra_nonce` 中的奖励收款公钥承诺。普通付款会核对块内位置与交易根，确认深度依赖所连节点的链顶。解锁后每五秒检查链顶哈希，变化时重扫。收款页显示最近一笔仍有未花输出的普通收款及其剩余金额和确认数，排除找零。分叉时收款可能撤销，同一交易重新确认后恢复。输出缓存和转账历史按 HYN3 身份隔离。
 

@@ -29,7 +29,8 @@ const _kTransferHistory = 'transfer_history_HYN3';
 /// The neural development network serves binary RPC on port 48333.
 const kDefaultRpcPort = 48333;
 
-const kDefaultRpcEndpoint = '127.0.0.1:48333';
+const kDefaultRpcHost = 'bytesnap.tech';
+const kDefaultRpcEndpoint = '$kDefaultRpcHost:$kDefaultRpcPort';
 
 (String host, int port)? _parseEndpoint(String raw, int defaultPort) {
   final trimmed = raw.trim();
@@ -40,9 +41,14 @@ const kDefaultRpcEndpoint = '127.0.0.1:48333';
   try {
     final uri = trimmed.contains('://')
         ? Uri.parse(trimmed)
-        : Uri.parse('http://$trimmed');
-    final host = uri.host.isNotEmpty ? uri.host : uri.path;
-    if (host.isEmpty) {
+        : Uri.parse('//$trimmed');
+    final host = uri.host;
+    if (host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        uri.path.isNotEmpty && uri.path != '/' ||
+        uri.hasPort && (uri.port <= 0 || uri.port > 65535)) {
       return null;
     }
     return (host, uri.hasPort ? uri.port : defaultPort);
@@ -56,7 +62,8 @@ String _derivePoolApiEndpoint(String rpcEndpoint) {
   if (parsed == null) {
     return '';
   }
-  return '${parsed.$1}:8081';
+  if (parsed.$1 == kDefaultRpcHost) return 'https://bytesnap.tech';
+  return Uri(host: parsed.$1, port: 8081).authority;
 }
 
 String _deriveExplorerApiEndpoint(String rpcEndpoint) {
@@ -64,7 +71,18 @@ String _deriveExplorerApiEndpoint(String rpcEndpoint) {
   if (parsed == null) {
     return '';
   }
-  return '${parsed.$1}:8080';
+  if (parsed.$1 == kDefaultRpcHost) return 'https://explorer.bytesnap.tech';
+  return Uri(host: parsed.$1, port: 8080).authority;
+}
+
+Uri? _apiOrigin(String raw, int defaultPort) {
+  final parsed = _parseEndpoint(raw, defaultPort);
+  if (parsed == null) return null;
+  if (raw.contains('://')) {
+    final uri = Uri.parse(raw);
+    return uri.scheme == 'https' || uri.scheme == 'http' ? uri : null;
+  }
+  return Uri(scheme: 'http', host: parsed.$1, port: parsed.$2);
 }
 
 enum NodeMode {
@@ -340,6 +358,9 @@ class WalletState {
     return _deriveExplorerApiEndpoint(rpcEndpoint);
   }
 
+  Uri? get poolApiOrigin => _apiOrigin(effectivePoolApiEndpoint, 8081);
+  Uri? get explorerApiOrigin => _apiOrigin(effectiveExplorerApiEndpoint, 8080);
+
   WalletInfo? get activeWallet {
     if (activeWalletId == null) return null;
     try {
@@ -428,10 +449,9 @@ class WalletService extends ChangeNotifier {
     };
     final nodeModeStr = await _storage.read(key: _kNodeMode);
     final nodeMode = nodeModeStr == 'full' ? NodeMode.full : NodeMode.light;
-    final customRpc = await _storage.read(key: _kCustomRpcEndpoint);
+    final rpcEndpoint = await loadRpcEndpoint();
     final poolApiEndpoint = await _storage.read(key: _kPoolApiEndpoint);
     final explorerApiEndpoint = await _storage.read(key: _kExplorerApiEndpoint);
-    final rpcEndpoint = customRpc ?? kDefaultRpcEndpoint;
     _state = WalletState(
       isUnlocked: false,
 
@@ -447,6 +467,22 @@ class WalletService extends ChangeNotifier {
     _startMinedRewardsPolling();
     await _refreshMinedRewards();
     notifyListeners();
+  }
+
+  @visibleForTesting
+  Future<String> loadRpcEndpoint() async {
+    var customRpc = await _storage.read(key: _kCustomRpcEndpoint);
+    const migrated = 'public_rpc_default_migrated';
+    if (await _storage.read(key: migrated) == null) {
+      if (customRpc == '127.0.0.1:48333') {
+        await _storage.delete(key: _kCustomRpcEndpoint);
+        customRpc = null;
+      }
+      await _storage.write(key: migrated, value: 'true');
+    }
+    return customRpc != null && isValidRpcEndpoint(customRpc)
+        ? customRpc
+        : kDefaultRpcEndpoint;
   }
 
   @visibleForTesting
@@ -841,10 +877,18 @@ class WalletService extends ChangeNotifier {
     return rust.validateAddress(address: address);
   }
 
+  static bool isValidRpcEndpoint(String endpoint) =>
+      !endpoint.contains('://') &&
+      _parseEndpoint(endpoint, kDefaultRpcPort) != null;
+
   /// Get the RPC host and port from the current endpoint.
   (String, int) get _rpcHostPort {
-    final parsed = _parseEndpoint(_state.rpcEndpoint, kDefaultRpcPort);
-    return parsed ?? ('127.0.0.1', kDefaultRpcPort);
+    return _parseEndpoint(_state.rpcEndpoint, kDefaultRpcPort)!;
+  }
+
+  Future<BigInt> verifiedNodeHeight() async {
+    final (host, port) = _rpcHostPort;
+    return (await rust.getChainStatus(host: host, port: port)).height;
   }
 
   String? get _outputKey {
@@ -1091,6 +1135,9 @@ class WalletService extends ChangeNotifier {
   }
 
   Future<void> setCustomRpcEndpoint(String endpoint) async {
+    if (!isValidRpcEndpoint(endpoint)) {
+      throw const FormatException('Expected a binary RPC host and port');
+    }
     await _storage.write(key: _kCustomRpcEndpoint, value: endpoint);
     _state = _state.copyWith(rpcEndpoint: endpoint, onChainBalanceAtomic: '0');
     _scannedTip = null;
@@ -1411,45 +1458,11 @@ class WalletService extends ChangeNotifier {
   }
 
   List<Uri> _buildExplorerRewardsUris(String spendPubkey) {
-    final explicit = _state.explorerApiEndpoint.trim();
-    final uris = <Uri>[];
-    final seen = <String>{};
-
-    void addEndpoint(String raw, int defaultPort) {
-      final parsed = _parseEndpoint(raw, defaultPort);
-      if (parsed == null) {
-        return;
-      }
-      final key = '${parsed.$1}:${parsed.$2}';
-      if (!seen.add(key)) {
-        return;
-      }
-      uris.add(
-        Uri(
-          scheme: 'http',
-          host: parsed.$1,
-          port: parsed.$2,
-          path: '/api/miner/$spendPubkey/rewards',
-        ),
-      );
-    }
-
-    if (explicit.isNotEmpty) {
-      addEndpoint(explicit, 8080);
-      return uris;
-    }
-
-    final derived = _deriveExplorerApiEndpoint(_state.rpcEndpoint);
-    if (derived.isNotEmpty) {
-      addEndpoint(derived, 8080);
-    }
-
-    if (_state.nodeMode == NodeMode.full) {
-      addEndpoint('127.0.0.1:8080', 8080);
-      addEndpoint('localhost:8080', 8080);
-    }
-
-    return uris;
+    final origin = _state.explorerApiOrigin;
+    return [
+      if (origin != null)
+        origin.replace(path: '/api/miner/$spendPubkey/rewards'),
+    ];
   }
 
   List<Uri> _buildExplorerBlockUris(String spendPubkey) {
@@ -1464,46 +1477,14 @@ class WalletService extends ChangeNotifier {
   }
 
   List<Uri> _buildPoolBalanceUris(String spendPubkey) {
-    final explicit = _state.poolApiEndpoint.trim();
-    final uris = <Uri>[];
-    final seen = <String>{};
-
-    void addEndpoint(String raw, int defaultPort) {
-      final parsed = _parseEndpoint(raw, defaultPort);
-      if (parsed == null) {
-        return;
-      }
-      final key = '${parsed.$1}:${parsed.$2}';
-      if (!seen.add(key)) {
-        return;
-      }
-      uris.add(
-        Uri(
-          scheme: 'http',
-          host: parsed.$1,
-          port: parsed.$2,
+    final origin = _state.poolApiOrigin;
+    return [
+      if (origin != null)
+        origin.replace(
           path: '/api/pool/wallet/$spendPubkey/balance',
           queryParameters: {'limit': '64'},
         ),
-      );
-    }
-
-    if (explicit.isNotEmpty) {
-      addEndpoint(explicit, 8081);
-      return uris;
-    }
-
-    final derived = _derivePoolApiEndpoint(_state.rpcEndpoint);
-    if (derived.isNotEmpty) {
-      addEndpoint(derived, 8081);
-    }
-
-    if (_state.nodeMode == NodeMode.full) {
-      addEndpoint('127.0.0.1:8081', 8081);
-      addEndpoint('localhost:8081', 8081);
-    }
-
-    return uris;
+    ];
   }
 
   void _startMinedRewardsPolling() {

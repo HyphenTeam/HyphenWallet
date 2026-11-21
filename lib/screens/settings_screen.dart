@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:material_ui/material_ui.dart';
 
 import '../l10n/app_localizations.dart';
@@ -54,7 +52,10 @@ class SettingsScreen extends StatelessWidget {
                 subtitle: const Text(kNeuralNetwork),
               ),
               _nodeModeTile(context, wallet, l10n, state),
-              _nodeConnectionTile(context, wallet, l10n, state),
+              _NodeConnectionTile(
+                key: ValueKey(state.rpcEndpoint),
+                wallet: wallet,
+              ),
               _nodeEndpointTile(context, wallet, l10n, state),
               _poolEndpointTile(context, wallet, l10n, state),
               _explorerEndpointTile(context, wallet, l10n, state),
@@ -580,73 +581,6 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _nodeConnectionTile(
-    BuildContext context,
-    WalletService wallet,
-    AppLocalizations l10n,
-    WalletState state,
-  ) {
-    return FutureBuilder<bool>(
-      future: _checkNodeConnection(state.rpcEndpoint),
-      builder: (ctx, snap) {
-        final cs = Theme.of(ctx).colorScheme;
-        final connected = snap.data ?? false;
-        final checking = snap.connectionState == ConnectionState.waiting;
-        final statusText = checking
-            ? l10n.checkingConnection
-            : connected
-            ? l10n.connected
-            : l10n.disconnected;
-        final statusColor = checking
-            ? cs.onSurfaceVariant
-            : connected
-            ? Colors.green
-            : cs.error;
-        final statusIcon = checking
-            ? Icons.sync_rounded
-            : connected
-            ? Icons.check_circle_rounded
-            : Icons.error_outline_rounded;
-        return Card(
-          margin: const EdgeInsets.only(bottom: 2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          elevation: 0,
-          child: ListTile(
-            leading: Icon(statusIcon, color: statusColor, size: 22),
-            title: Text(
-              l10n.nodeConnectionStatus,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-            ),
-            subtitle: Text(
-              statusText,
-              style: TextStyle(
-                fontSize: 14,
-                color: statusColor,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            trailing: IconButton(
-              icon: Icon(
-                Icons.refresh_rounded,
-                size: 20,
-                color: cs.onSurfaceVariant,
-              ),
-              onPressed: () {
-                // Force rebuild by triggering notifyListeners
-                wallet.setCustomRpcEndpoint(state.rpcEndpoint);
-              },
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _nodeEndpointTile(
     BuildContext context,
     WalletService wallet,
@@ -813,25 +747,6 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Future<bool> _checkNodeConnection(String endpoint) async {
-    try {
-      final parts = endpoint.split(':');
-      final host = parts[0];
-      final port = parts.length > 1
-          ? int.tryParse(parts[1]) ?? kDefaultRpcPort
-          : kDefaultRpcPort;
-      final socket = await Socket.connect(
-        host,
-        port,
-        timeout: const Duration(seconds: 5),
-      );
-      socket.destroy();
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
   void _showNodeEndpointDialog(
     BuildContext context,
     WalletService wallet,
@@ -839,6 +754,7 @@ class SettingsScreen extends StatelessWidget {
     WalletState state,
   ) {
     final controller = TextEditingController(text: state.rpcEndpoint);
+    final endpointField = GlobalKey<FormFieldState<String>>();
     final savedNodes = <String>[kDefaultRpcEndpoint];
     const defaultEndpoint = kDefaultRpcEndpoint;
     if (state.rpcEndpoint != defaultEndpoint &&
@@ -938,7 +854,12 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    TextField(
+                    TextFormField(
+                      key: endpointField,
+                      validator: (value) =>
+                          WalletService.isValidRpcEndpoint(value ?? '')
+                          ? null
+                          : 'host:port',
                       controller: controller,
                       style: const TextStyle(
                         fontSize: 14,
@@ -960,15 +881,15 @@ class SettingsScreen extends StatelessWidget {
                           ),
                           onPressed: () {
                             final endpoint = controller.text.trim();
-                            if (endpoint.isNotEmpty) {
+                            if (endpointField.currentState!.validate()) {
                               wallet.setCustomRpcEndpoint(endpoint);
                               Navigator.pop(ctx);
                             }
                           },
                         ),
                       ),
-                      onSubmitted: (value) {
-                        if (value.trim().isNotEmpty) {
+                      onFieldSubmitted: (value) {
+                        if (endpointField.currentState!.validate()) {
                           wallet.setCustomRpcEndpoint(value.trim());
                           Navigator.pop(ctx);
                         }
@@ -1071,7 +992,7 @@ class SettingsScreen extends StatelessWidget {
                   controller: controller,
                   style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
                   decoration: InputDecoration(
-                    hintText: 'host:port',
+                    hintText: 'https://bytesnap.tech',
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 14,
                       vertical: 12,
@@ -1190,7 +1111,7 @@ class SettingsScreen extends StatelessWidget {
                   controller: controller,
                   style: const TextStyle(fontSize: 14, fontFamily: 'monospace'),
                   decoration: InputDecoration(
-                    hintText: 'host:port',
+                    hintText: 'https://explorer.bytesnap.tech',
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 14,
                       vertical: 12,
@@ -1361,6 +1282,65 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _NodeConnectionTile extends StatefulWidget {
+  const _NodeConnectionTile({super.key, required this.wallet});
+  final WalletService wallet;
+
+  @override
+  State<_NodeConnectionTile> createState() => _NodeConnectionTileState();
+}
+
+class _NodeConnectionTileState extends State<_NodeConnectionTile> {
+  late Future<BigInt> _height = widget.wallet.verifiedNodeHeight();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
+    return FutureBuilder<BigInt>(
+      future: _height,
+      builder: (context, snap) {
+        final checking = snap.connectionState == ConnectionState.waiting;
+        final color = checking
+            ? cs.onSurfaceVariant
+            : snap.hasData
+            ? Colors.green
+            : cs.error;
+        final icon = checking
+            ? Icons.sync_rounded
+            : snap.hasData
+            ? Icons.check_circle_rounded
+            : Icons.error_outline_rounded;
+        final status = checking
+            ? l10n.checkingConnection
+            : snap.hasData
+            ? '${l10n.connected} · HYN3 #${snap.data}'
+            : l10n.disconnected;
+        return Card(
+          margin: const EdgeInsets.only(bottom: 2),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          elevation: 0,
+          child: ListTile(
+            leading: Icon(icon, color: color, size: 22),
+            title: Text(l10n.nodeConnectionStatus),
+            subtitle: Text(status, style: TextStyle(color: color)),
+            trailing: IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: checking
+                  ? null
+                  : () => setState(() {
+                      _height = widget.wallet.verifiedNodeHeight();
+                    }),
+            ),
+          ),
+        );
+      },
     );
   }
 }
